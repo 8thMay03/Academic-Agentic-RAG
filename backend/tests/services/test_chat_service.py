@@ -1,0 +1,96 @@
+import pytest
+
+from app.services.chat_service import UNKNOWN_ANSWER, ChatService
+
+
+class FakeRetrieverService:
+    def __init__(self, chunks: list[dict]) -> None:
+        self.chunks = chunks
+        self.query = None
+        self.top_k = None
+        self.score_threshold = None
+
+    async def retrieve(
+        self,
+        query: str,
+        top_k: int = 5,
+        score_threshold: float | None = None,
+    ) -> list[dict]:
+        self.query = query
+        self.top_k = top_k
+        self.score_threshold = score_threshold
+        return self.chunks
+
+
+class FakeLLMService:
+    def __init__(self, answer: str) -> None:
+        self.answer = answer
+        self.prompts: list[str] = []
+
+    async def complete(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.answer
+
+
+RETRIEVED_CHUNK = {
+    "id": "paper-1:p3:c0",
+    "text": "Agentic RAG uses planning to decide when to retrieve evidence.",
+    "metadata": {
+        "paper_id": "paper-1",
+        "title": "Agentic RAG",
+        "page_number": "3",
+        "chunk_id": "paper-1:p3:c0",
+    },
+    "score": 0.91,
+    "citation": {
+        "paper_id": "paper-1",
+        "title": "Agentic RAG",
+        "page_number": 3,
+        "chunk_id": "paper-1:p3:c0",
+        "text": "Agentic RAG uses planning to decide when to retrieve evidence.",
+    },
+}
+
+
+@pytest.mark.asyncio
+async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> None:
+    retriever = FakeRetrieverService([])
+    llm = FakeLLMService("This should not be called.")
+    service = ChatService(retriever, llm)
+
+    answer, citations = await service.answer("What is the method?", top_k=3, score_threshold=0.7)
+
+    assert answer == UNKNOWN_ANSWER
+    assert citations == []
+    assert llm.prompts == []
+    assert retriever.top_k == 3
+    assert retriever.score_threshold == 0.7
+
+
+@pytest.mark.asyncio
+async def test_chat_service_answers_with_citations_from_context() -> None:
+    retriever = FakeRetrieverService([RETRIEVED_CHUNK])
+    llm = FakeLLMService("It uses planning for retrieval decisions (p. 3).")
+    service = ChatService(retriever, llm)
+
+    answer, citations = await service.answer("What is the method?")
+
+    assert answer == "It uses planning for retrieval decisions (p. 3)."
+    assert citations[0].paper_id == "paper-1"
+    assert citations[0].page_number == 3
+    assert citations[0].chunk_id == "paper-1:p3:c0"
+    assert "If the context does not contain enough information" in llm.prompts[0]
+    assert "I don't know" in llm.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_filters_context_by_paper_ids() -> None:
+    retriever = FakeRetrieverService([RETRIEVED_CHUNK])
+    llm = FakeLLMService("This should not be called.")
+    service = ChatService(retriever, llm)
+
+    answer, citations = await service.answer("What is the method?", paper_ids=["paper-2"])
+
+    assert answer == UNKNOWN_ANSWER
+    assert citations == []
+    assert llm.prompts == []
