@@ -39,6 +39,13 @@ export async function listDownloadedPdfs() {
   return request("/papers/pdfs");
 }
 
+export async function indexDownloadedPdf(filename) {
+  return request("/papers/pdfs/index", {
+    method: "POST",
+    body: JSON.stringify({ filename }),
+  });
+}
+
 export async function chatWithPaper({ question, paperIds, topK, scoreThreshold }) {
   return request("/chat", {
     method: "POST",

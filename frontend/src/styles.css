@@ -371,13 +371,22 @@ button:disabled {
 .downloaded-item {
   display: grid;
   gap: 5px;
+  width: 100%;
   border: 1px solid #d4dce5;
   background: #ffffff;
+  color: #17202a;
   padding: 10px;
+  text-align: left;
 }
 
 .downloaded-item.muted {
   color: #667487;
+}
+
+.downloaded-item:hover,
+.downloaded-item.active {
+  border-color: #2f6f78;
+  background: #f1f8f8;
 }
 
 .downloaded-name {
@@ -395,6 +404,31 @@ button:disabled {
   color: #667487;
   font-size: 0.78rem;
   line-height: 1.35;
+}
+
+.index-badge {
+  justify-self: start;
+  border: 1px solid;
+  padding: 3px 7px;
+  font-size: 0.74rem;
+}
+
+.index-badge.neutral {
+  border-color: #c8d4dc;
+  background: #f4f7fa;
+  color: #405063;
+}
+
+.index-badge.success {
+  border-color: #aacfb8;
+  background: #f1faf4;
+  color: #27603e;
+}
+
+.index-badge.error {
+  border-color: #e0a8a8;
+  background: #fff5f5;
+  color: #9d2b2b;
 }
 
 .chat-panel {
@@ -523,6 +557,17 @@ button:disabled {
   border-color: #aacfb8;
   background: #f1faf4;
   color: #27603e;
+}
+
+.local-path-box {
+  margin-top: 12px;
+  border: 1px solid #c8d4dc;
+  background: #f4f7fa;
+  color: #405063;
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  font-size: 0.84rem;
+  line-height: 1.4;
 }
 
 .compact-error {

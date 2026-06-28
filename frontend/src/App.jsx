@@ -11,7 +11,13 @@ import {
   User,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { chatWithPaper, downloadPapers, listDownloadedPdfs, searchPapers } from "./api";
+import {
+  chatWithPaper,
+  downloadPapers,
+  indexDownloadedPdf,
+  listDownloadedPdfs,
+  searchPapers,
+} from "./api";
 
 const DEFAULT_QUERY = "Agentic RAG";
 
@@ -21,6 +27,19 @@ function normalizePaper(paper) {
     arxivUrl: paper.arxiv_url ?? paper.url,
     pdfUrl: paper.pdf_url,
     published: paper.published ?? "Unknown date",
+  };
+}
+
+function paperFromDownloadedPdf(pdf) {
+  const paperId = pdf.filename.replace(/\.pdf$/i, "");
+  return {
+    paper_id: paperId,
+    title: pdf.filename,
+    authors: [],
+    abstract: "Local downloaded PDF. Select it to index the file, then ask questions in chat.",
+    published: formatDateTime(pdf.modified_at),
+    pdfPath: pdf.path,
+    source: "local",
   };
 }
 
@@ -34,14 +53,27 @@ function App() {
   const [downloadState, setDownloadState] = useState({ loading: false, message: "", error: "" });
   const [downloadedPdfs, setDownloadedPdfs] = useState([]);
   const [pdfListState, setPdfListState] = useState({ loading: false, error: "" });
+  const [selectedPdfFilename, setSelectedPdfFilename] = useState(null);
+  const [pdfIndexState, setPdfIndexState] = useState({});
   const [chatMessages, setChatMessages] = useState([]);
   const [question, setQuestion] = useState("");
   const [chatState, setChatState] = useState({ loading: false, error: "" });
 
-  const selectedPaper = useMemo(
-    () => papers.find((paper) => paper.paper_id === selectedPaperId) ?? papers[0],
-    [papers, selectedPaperId],
+  const selectedDownloadedPdf = useMemo(
+    () => downloadedPdfs.find((pdf) => pdf.filename === selectedPdfFilename),
+    [downloadedPdfs, selectedPdfFilename],
   );
+
+  const selectedPaper = useMemo(() => {
+    if (selectedDownloadedPdf) {
+      return paperFromDownloadedPdf(selectedDownloadedPdf);
+    }
+    return papers.find((paper) => paper.paper_id === selectedPaperId) ?? papers[0];
+  }, [papers, selectedDownloadedPdf, selectedPaperId]);
+
+  const selectedPdfIndexState = selectedPdfFilename
+    ? pdfIndexState[selectedPdfFilename] ?? { loading: false, error: "", chunksIndexed: null }
+    : null;
 
   useEffect(() => {
     void refreshDownloadedPdfs();
@@ -69,6 +101,7 @@ function App() {
       const normalizedPapers = (response.papers ?? []).map(normalizePaper);
       setPapers(normalizedPapers);
       setSelectedPaperId(normalizedPapers[0]?.paper_id ?? null);
+      setSelectedPdfFilename(null);
     } catch (error) {
       setSearchState({ loading: false, error: error.message });
       return;
@@ -93,6 +126,35 @@ function App() {
       await refreshDownloadedPdfs();
     } catch (error) {
       setDownloadState({ loading: false, message: "", error: error.message });
+    }
+  }
+
+  async function handleSelectDownloadedPdf(pdf) {
+    setSelectedPdfFilename(pdf.filename);
+    setSelectedPaperId(null);
+    setChatMessages([]);
+    setDownloadState({ loading: false, message: "", error: "" });
+
+    setPdfIndexState((state) => ({
+      ...state,
+      [pdf.filename]: { loading: true, error: "", chunksIndexed: null },
+    }));
+
+    try {
+      const response = await indexDownloadedPdf(pdf.filename);
+      setPdfIndexState((state) => ({
+        ...state,
+        [pdf.filename]: {
+          loading: false,
+          error: "",
+          chunksIndexed: response.chunks_indexed,
+        },
+      }));
+    } catch (error) {
+      setPdfIndexState((state) => ({
+        ...state,
+        [pdf.filename]: { loading: false, error: error.message, chunksIndexed: null },
+      }));
     }
   }
 
@@ -192,6 +254,7 @@ function App() {
               key={paper.paper_id}
               onClick={() => {
                 setSelectedPaperId(paper.paper_id);
+                setSelectedPdfFilename(null);
                 setChatMessages([]);
                 setDownloadState({ loading: false, message: "", error: "" });
               }}
@@ -211,7 +274,10 @@ function App() {
           error={pdfListState.error}
           loading={pdfListState.loading}
           onRefresh={refreshDownloadedPdfs}
+          onSelect={handleSelectDownloadedPdf}
           pdfs={downloadedPdfs}
+          selectedFilename={selectedPdfFilename}
+          states={pdfIndexState}
         />
       </section>
 
@@ -219,6 +285,7 @@ function App() {
         {selectedPaper ? (
           <PaperDetail
             downloadState={downloadState}
+            indexState={selectedPdfIndexState}
             onDownload={handleDownloadSelected}
             paper={selectedPaper}
           />
@@ -267,9 +334,12 @@ function App() {
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
             placeholder={selectedPaper ? "Ask about method, results, limitations..." : "Select a paper first"}
-            disabled={!selectedPaper || chatState.loading}
+            disabled={!selectedPaper || chatState.loading || selectedPdfIndexState?.loading}
           />
-          <button type="submit" disabled={!selectedPaper || !question.trim() || chatState.loading}>
+          <button
+            type="submit"
+            disabled={!selectedPaper || !question.trim() || chatState.loading || selectedPdfIndexState?.loading}
+          >
             <Send size={17} aria-hidden="true" />
             <span>Ask</span>
           </button>
@@ -279,7 +349,7 @@ function App() {
   );
 }
 
-function DownloadedPdfList({ error, loading, onRefresh, pdfs }) {
+function DownloadedPdfList({ error, loading, onRefresh, onSelect, pdfs, selectedFilename, states }) {
   return (
     <section className="downloaded-section" aria-label="Downloaded PDFs">
       <div className="section-title-row">
@@ -303,7 +373,12 @@ function DownloadedPdfList({ error, loading, onRefresh, pdfs }) {
         ) : null}
 
         {pdfs.map((pdf) => (
-          <div className="downloaded-item" key={pdf.path}>
+          <button
+            className={`downloaded-item ${pdf.filename === selectedFilename ? "active" : ""}`}
+            key={pdf.path}
+            onClick={() => onSelect(pdf)}
+            type="button"
+          >
             <div>
               <span className="downloaded-name">{pdf.filename}</span>
               <span className="downloaded-meta">
@@ -311,7 +386,8 @@ function DownloadedPdfList({ error, loading, onRefresh, pdfs }) {
               </span>
             </div>
             <span className="downloaded-path">{pdf.path}</span>
-          </div>
+            <PdfIndexBadge state={states[pdf.filename]} />
+          </button>
         ))}
 
         {loading ? (
@@ -324,7 +400,15 @@ function DownloadedPdfList({ error, loading, onRefresh, pdfs }) {
   );
 }
 
-function PaperDetail({ downloadState, onDownload, paper }) {
+function PdfIndexBadge({ state }) {
+  if (!state) return <span className="index-badge neutral">Not indexed</span>;
+  if (state.loading) return <span className="index-badge neutral">Indexing...</span>;
+  if (state.error) return <span className="index-badge error">Index failed</span>;
+  if (state.chunksIndexed !== null) return <span className="index-badge success">{state.chunksIndexed} chunks</span>;
+  return null;
+}
+
+function PaperDetail({ downloadState, indexState, onDownload, paper }) {
   return (
     <article className="paper-detail">
       <div className="detail-topline">
@@ -347,14 +431,22 @@ function PaperDetail({ downloadState, onDownload, paper }) {
             PDF
           </a>
         ) : null}
-        <button disabled={!paper.pdfUrl || downloadState.loading} onClick={onDownload} type="button">
-          <ArrowDownToLine size={16} aria-hidden="true" />
-          {downloadState.loading ? "Saving" : "Download"}
-        </button>
+        {paper.source === "local" ? null : (
+          <button disabled={!paper.pdfUrl || downloadState.loading} onClick={onDownload} type="button">
+            <ArrowDownToLine size={16} aria-hidden="true" />
+            {downloadState.loading ? "Saving" : "Download"}
+          </button>
+        )}
       </div>
 
       {downloadState.message ? <div className="success-box">{downloadState.message}</div> : null}
       {downloadState.error ? <div className="error-box">{downloadState.error}</div> : null}
+      {indexState?.loading ? <div className="success-box">Indexing PDF for chat...</div> : null}
+      {indexState?.chunksIndexed !== null ? (
+        <div className="success-box">Ready for chat: {indexState.chunksIndexed} chunks indexed.</div>
+      ) : null}
+      {indexState?.error ? <div className="error-box">{indexState.error}</div> : null}
+      {paper.pdfPath ? <div className="local-path-box">{paper.pdfPath}</div> : null}
 
       <section className="abstract-section">
         <h3>Abstract</h3>

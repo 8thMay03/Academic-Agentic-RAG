@@ -47,3 +47,13 @@ class DownloadedPDF(BaseModel):
     path: str
     size_bytes: int
     modified_at: str
+
+
+class DownloadedPDFIndexRequest(BaseModel):
+    filename: str
+
+
+class DownloadedPDFIndexResponse(BaseModel):
+    paper_id: str
+    filename: str
+    chunks_indexed: int
