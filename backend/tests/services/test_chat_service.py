@@ -11,6 +11,8 @@ class FakeRetrieverService:
         self.score_threshold = None
         self.paper_ids = None
         self.calls = []
+        self.paper_ids = None
+        self.calls = []
 
     async def retrieve(
         self,
@@ -113,6 +115,10 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
         },
     ]
     assert retriever.paper_ids is None
+    assert retriever.calls == [
+        ("What is the method?", 3, 0.7, None),
+        ("What is the method?", 3, None, None),
+    ]
 
 
 @pytest.mark.asyncio

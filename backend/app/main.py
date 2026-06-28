@@ -1,14 +1,35 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.api_router import api_router
 from app.config.settings import settings
+from app.services.pdf_index_service import PDFIndexService
+
+
+async def index_local_pdfs_on_startup() -> None:
+    if not settings.INDEX_LOCAL_PDFS_ON_STARTUP:
+        return
+
+    try:
+        await PDFIndexService().index_all_downloaded_pdfs()
+    except Exception as exc:
+        print(f"Failed to index local PDFs on startup: {exc}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await index_local_pdfs_on_startup()
+    yield
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
+        lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
