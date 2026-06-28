@@ -11,6 +11,8 @@ class FakeRetrieverService:
         self.score_threshold = None
         self.paper_ids = None
         self.calls = []
+        self.paper_ids = None
+        self.calls = []
 
     async def retrieve(
         self,
@@ -23,8 +25,37 @@ class FakeRetrieverService:
         self.top_k = top_k
         self.score_threshold = score_threshold
         self.paper_ids = paper_ids
-        self.calls.append((query, top_k, score_threshold, paper_ids))
+        self.calls.append(
+            {
+                "query": query,
+                "top_k": top_k,
+                "score_threshold": score_threshold,
+                "paper_ids": paper_ids,
+            }
+        )
         return self.chunks
+
+
+class ThresholdSensitiveRetrieverService:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def retrieve(
+        self,
+        query: str,
+        top_k: int = 5,
+        score_threshold: float | None = None,
+        paper_ids: list[str] | None = None,
+    ) -> list[dict]:
+        self.calls.append(
+            {
+                "query": query,
+                "top_k": top_k,
+                "score_threshold": score_threshold,
+                "paper_ids": paper_ids,
+            }
+        )
+        return [] if score_threshold else [RETRIEVED_CHUNK]
 
 
 class FakeLLMService:
@@ -70,6 +101,21 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
     assert llm.prompts == []
     assert retriever.top_k == 3
     assert retriever.calls == [
+        {
+            "query": "What is the method?",
+            "top_k": 3,
+            "score_threshold": 0.7,
+            "paper_ids": None,
+        },
+        {
+            "query": "What is the method?",
+            "top_k": 3,
+            "score_threshold": None,
+            "paper_ids": None,
+        },
+    ]
+    assert retriever.paper_ids is None
+    assert retriever.calls == [
         ("What is the method?", 3, 0.7, None),
         ("What is the method?", 3, None, None),
     ]
@@ -89,6 +135,36 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert citations[0].chunk_id == "paper-1:p3:c0"
     assert "If the context does not contain enough information" in llm.prompts[0]
     assert "I don't know" in llm.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_retries_without_threshold_when_selected_paper_has_context() -> None:
+    retriever = ThresholdSensitiveRetrieverService()
+    llm = FakeLLMService("It uses planning for retrieval decisions (p. 3).")
+    service = ChatService(retriever, llm)
+
+    answer, citations = await service.answer(
+        "What is the method?",
+        paper_ids=["paper-1"],
+        score_threshold=0.8,
+    )
+
+    assert answer == "It uses planning for retrieval decisions (p. 3)."
+    assert citations[0].page_number == 3
+    assert retriever.calls == [
+        {
+            "query": "What is the method?",
+            "top_k": 5,
+            "score_threshold": 0.8,
+            "paper_ids": ["paper-1"],
+        },
+        {
+            "query": "What is the method?",
+            "top_k": 5,
+            "score_threshold": None,
+            "paper_ids": ["paper-1"],
+        },
+    ]
 
 
 @pytest.mark.asyncio
