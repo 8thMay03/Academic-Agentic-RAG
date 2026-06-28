@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_pdf_service
+from app.config import settings as settings_module
 from app.main import app
 from app.services.pdf_service import PDFDownloadError, PDFDownloadResult
 
@@ -120,3 +121,23 @@ def test_download_papers_returns_bad_gateway_on_download_error() -> None:
             }
         ]
     }
+
+
+def test_list_downloaded_pdfs_returns_existing_pdf_files(monkeypatch, tmp_path) -> None:
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.mkdir()
+    first_pdf = pdf_dir / "paper-1.pdf"
+    second_pdf = pdf_dir / "paper-2.pdf"
+    first_pdf.write_bytes(b"%PDF first")
+    second_pdf.write_bytes(b"%PDF second")
+    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
+    client = TestClient(app)
+
+    response = client.get("/api/v1/papers/pdfs")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["filename"] for item in payload] == ["paper-2.pdf", "paper-1.pdf"]
+    assert payload[0]["path"].endswith("paper-2.pdf")
+    assert payload[0]["size_bytes"] == len(b"%PDF second")
+    assert payload[0]["modified_at"]

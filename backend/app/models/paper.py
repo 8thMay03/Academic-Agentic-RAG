@@ -40,3 +40,10 @@ class PaperDownloadResponse(BaseModel):
     files: list[str]
     cached_files: list[str] = Field(default_factory=list)
     errors: list[PaperDownloadFailure] = Field(default_factory=list)
+
+
+class DownloadedPDF(BaseModel):
+    filename: str
+    path: str
+    size_bytes: int
+    modified_at: str
