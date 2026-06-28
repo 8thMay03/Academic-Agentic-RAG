@@ -24,9 +24,10 @@ class FakeCollection:
             "embeddings": embeddings,
         }
 
-    def query(self, query_embeddings, n_results, include):
+    def query(self, query_embeddings, n_results, where, include):
         assert query_embeddings == [[0.5, 1.0]]
         assert n_results == 2
+        assert where in (None, {"paper_id": "paper-1"})
         assert include == ["documents", "metadatas", "distances"]
         return {
             "ids": [["chunk-1", "chunk-2"]],
@@ -136,6 +137,20 @@ async def test_chroma_vector_store_similarity_search_formats_results(tmp_path) -
             },
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_chroma_vector_store_similarity_search_filters_by_paper_id(tmp_path) -> None:
+    store = ChromaVectorStore(
+        persist_dir=tmp_path,
+        collection_name="test_chunks",
+        embedding_service=FakeEmbeddingService(),
+        client=FakeChromaClient(),
+    )
+
+    results = await store.similarity_search("agentic rag", top_k=2, paper_ids=["paper-1"])
+
+    assert results[0]["metadata"]["paper_id"] == "paper-1"
 
 
 @pytest.mark.asyncio

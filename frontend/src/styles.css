@@ -639,6 +639,26 @@ button:disabled {
   font-size: 1.1rem;
 }
 
+.chat-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-header-actions button {
+  min-height: 32px;
+  border: 1px solid #c2ced9;
+  background: #ffffff;
+  color: #405063;
+  padding: 0 10px;
+}
+
+.chat-header-actions button:hover {
+  border-color: #2f6f78;
+  background: #e8f2f2;
+  color: #173d43;
+}
+
 .panel-header p {
   display: -webkit-box;
   overflow: hidden;

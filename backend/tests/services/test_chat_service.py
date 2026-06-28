@@ -9,16 +9,21 @@ class FakeRetrieverService:
         self.query = None
         self.top_k = None
         self.score_threshold = None
+        self.paper_ids = None
+        self.calls = []
 
     async def retrieve(
         self,
         query: str,
         top_k: int = 5,
         score_threshold: float | None = None,
+        paper_ids: list[str] | None = None,
     ) -> list[dict]:
         self.query = query
         self.top_k = top_k
         self.score_threshold = score_threshold
+        self.paper_ids = paper_ids
+        self.calls.append((query, top_k, score_threshold, paper_ids))
         return self.chunks
 
 
@@ -64,7 +69,10 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
     assert citations == []
     assert llm.prompts == []
     assert retriever.top_k == 3
-    assert retriever.score_threshold == 0.7
+    assert retriever.calls == [
+        ("What is the method?", 3, 0.7, None),
+        ("What is the method?", 3, None, None),
+    ]
 
 
 @pytest.mark.asyncio

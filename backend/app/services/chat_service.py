@@ -26,8 +26,18 @@ class ChatService:
             question,
             top_k=top_k,
             score_threshold=score_threshold,
+            paper_ids=paper_ids,
         )
         filtered_chunks = self._filter_by_paper_ids(retrieved_chunks, paper_ids)
+
+        if not filtered_chunks and score_threshold is not None and score_threshold > 0:
+            retrieved_chunks = await self._retriever_service.retrieve(
+                question,
+                top_k=top_k,
+                score_threshold=None,
+                paper_ids=paper_ids,
+            )
+            filtered_chunks = self._filter_by_paper_ids(retrieved_chunks, paper_ids)
 
         if not filtered_chunks:
             return UNKNOWN_ANSWER, []

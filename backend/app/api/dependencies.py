@@ -5,6 +5,7 @@ from app.services.pdf_service import PDFService
 from app.services.retriever_service import RetrieverService
 from app.services.search_service import SearchService
 from app.services.summary_service import SummaryService
+from app.storage.chat_history_store import ChatHistoryStore
 
 
 def get_search_service() -> SearchService:
@@ -33,3 +34,7 @@ def get_retriever_service() -> RetrieverService:
 
 def get_chat_service() -> ChatService:
     return ChatService(get_retriever_service(), get_llm_service())
+
+
+def get_chat_history_store() -> ChatHistoryStore:
+    return ChatHistoryStore()

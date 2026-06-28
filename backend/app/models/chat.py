@@ -14,3 +14,15 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     citations: list[Citation]
+
+
+class ChatHistoryMessage(BaseModel):
+    role: str
+    content: str
+    citations: list[Citation] = Field(default_factory=list)
+    created_at: str
+
+
+class ChatHistoryResponse(BaseModel):
+    paper_id: str
+    messages: list[ChatHistoryMessage] = Field(default_factory=list)
