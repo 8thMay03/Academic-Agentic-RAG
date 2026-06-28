@@ -29,10 +29,25 @@ class FakeCollection:
         assert n_results == 2
         assert include == ["documents", "metadatas", "distances"]
         return {
-            "ids": [["chunk-1"]],
-            "documents": [["Relevant chunk"]],
-            "metadatas": [[{"paper_id": "paper-1"}]],
-            "distances": [[0.12]],
+            "ids": [["chunk-1", "chunk-2"]],
+            "documents": [["Relevant chunk", "Weak chunk"]],
+            "metadatas": [
+                [
+                    {
+                        "chunk_id": "chunk-1",
+                        "paper_id": "paper-1",
+                        "title": "Agentic RAG",
+                        "page_number": "7",
+                    },
+                    {
+                        "chunk_id": "chunk-2",
+                        "paper_id": "paper-2",
+                        "title": "Other Paper",
+                        "page_number": "9",
+                    },
+                ]
+            ],
+            "distances": [[0.12, 2.0]],
         }
 
 
@@ -83,10 +98,58 @@ async def test_chroma_vector_store_similarity_search_formats_results(tmp_path) -
         {
             "id": "chunk-1",
             "text": "Relevant chunk",
-            "metadata": {"paper_id": "paper-1"},
+            "metadata": {
+                "chunk_id": "chunk-1",
+                "paper_id": "paper-1",
+                "title": "Agentic RAG",
+                "page_number": "7",
+            },
             "distance": 0.12,
+            "score": 0.8928571428571428,
+            "citation": {
+                "paper_id": "paper-1",
+                "title": "Agentic RAG",
+                "page_number": 7,
+                "page": 7,
+                "chunk_id": "chunk-1",
+                "text": "Relevant chunk",
+            },
+        },
+        {
+            "id": "chunk-2",
+            "text": "Weak chunk",
+            "metadata": {
+                "chunk_id": "chunk-2",
+                "paper_id": "paper-2",
+                "title": "Other Paper",
+                "page_number": "9",
+            },
+            "distance": 2.0,
+            "score": 0.3333333333333333,
+            "citation": {
+                "paper_id": "paper-2",
+                "title": "Other Paper",
+                "page_number": 9,
+                "page": 9,
+                "chunk_id": "chunk-2",
+                "text": "Weak chunk",
+            },
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_chroma_vector_store_similarity_search_filters_by_score_threshold(tmp_path) -> None:
+    store = ChromaVectorStore(
+        persist_dir=tmp_path,
+        collection_name="test_chunks",
+        embedding_service=FakeEmbeddingService(),
+        client=FakeChromaClient(),
+    )
+
+    results = await store.similarity_search("agentic rag", top_k=2, score_threshold=0.8)
+
+    assert [result["id"] for result in results] == ["chunk-1"]
 
 
 @pytest.mark.asyncio
