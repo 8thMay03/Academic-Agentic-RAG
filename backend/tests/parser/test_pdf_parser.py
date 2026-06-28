@@ -3,6 +3,7 @@ from pathlib import Path
 import fitz
 import pytest
 
+from app.parser.cleaner import PAGE_BREAK
 from app.parser.pdf_parser import extract_text_from_pdf
 from app.services.parser_service import ParserService
 
@@ -34,6 +35,7 @@ def test_extract_text_from_pdf_reads_all_pages_in_order(tmp_path) -> None:
     assert "Page two methods" in text
     assert "Retriever and planner details" in text
     assert "Page three conclusion" in text
+    assert PAGE_BREAK in text
     assert text.index("Page one title") < text.index("Page two methods")
     assert text.index("Page two methods") < text.index("Page three conclusion")
 
