@@ -49,6 +49,122 @@ button:disabled {
   padding: 16px;
 }
 
+.home-shell,
+.chat-workspace {
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.home-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #cfd7df;
+  background: #fbfcfd;
+  box-shadow: 0 18px 48px rgb(36 52 70 / 8%);
+  padding: 22px;
+}
+
+.home-header h1 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.55rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.home-header p {
+  margin: 7px 0 0;
+  color: #637083;
+  line-height: 1.45;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.library-panel,
+.online-panel,
+.chat-paper-panel,
+.chat-main-panel {
+  border: 1px solid #cfd7df;
+  background: #fbfcfd;
+  box-shadow: 0 18px 48px rgb(36 52 70 / 8%);
+}
+
+.library-panel,
+.online-panel {
+  padding: 18px;
+}
+
+.chat-workspace {
+  display: grid;
+  grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.chat-paper-panel {
+  padding: 18px;
+  overflow: auto;
+}
+
+.chat-main-panel {
+  display: flex;
+  min-height: calc(100vh - 32px);
+  min-width: 0;
+  flex-direction: column;
+}
+
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  border: 1px solid #c2ced9;
+  background: #ffffff;
+  color: #243447;
+  padding: 0 11px;
+}
+
+.back-button:hover {
+  border-color: #2f6f78;
+  background: #e8f2f2;
+  color: #173d43;
+}
+
+.selected-paper-card {
+  margin-top: 18px;
+}
+
+.selected-paper-card h1 {
+  margin: 8px 0 0;
+  color: #111827;
+  font-size: 1.55rem;
+  line-height: 1.22;
+  letter-spacing: 0;
+}
+
+.selected-paper-card p {
+  margin: 10px 0 0;
+  color: #405063;
+  line-height: 1.5;
+}
+
+.paper-kind {
+  display: inline-flex;
+  border: 1px solid #c8d4dc;
+  background: #f4f7fa;
+  color: #405063;
+  padding: 4px 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .search-panel,
 .detail-panel,
 .chat-panel {
@@ -330,10 +446,14 @@ button:disabled {
   gap: 10px;
 }
 
+.section-title-row.prominent {
+  margin-bottom: 14px;
+}
+
 .section-title-row h2 {
   margin: 0;
   color: #111827;
-  font-size: 0.98rem;
+  font-size: 1.08rem;
   letter-spacing: 0;
 }
 
@@ -366,6 +486,77 @@ button:disabled {
   max-height: 260px;
   overflow: auto;
   padding-right: 2px;
+}
+
+.pdf-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.pdf-card,
+.online-paper-card {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid #d4dce5;
+  background: #ffffff;
+  color: #17202a;
+  padding: 14px;
+  text-align: left;
+}
+
+.pdf-card {
+  min-height: 150px;
+  align-content: start;
+}
+
+.pdf-card:hover,
+.online-paper-card:hover {
+  border-color: #2f6f78;
+  background: #f1f8f8;
+}
+
+.pdf-card svg {
+  color: #2f6f78;
+}
+
+.pdf-card-title {
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 0.98rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.pdf-card-meta,
+.pdf-card-path {
+  overflow-wrap: anywhere;
+  color: #667487;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.online-result-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.online-paper-card {
+  align-content: start;
+}
+
+.online-paper-action {
+  justify-self: start;
+  border: 1px solid #aacfb8;
+  background: #f1faf4;
+  color: #27603e;
+  padding: 4px 7px;
+  font-size: 0.76rem;
 }
 
 .downloaded-item {
@@ -579,14 +770,25 @@ button:disabled {
     grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
   }
 
+  .home-grid,
+  .chat-workspace {
+    grid-template-columns: 1fr;
+  }
+
   .chat-panel {
     grid-column: 1 / -1;
     min-height: 520px;
   }
+
+  .chat-main-panel {
+    min-height: 620px;
+  }
 }
 
 @media (max-width: 820px) {
-  .app-shell {
+  .app-shell,
+  .home-shell,
+  .chat-workspace {
     grid-template-columns: 1fr;
     padding: 10px;
   }
@@ -603,6 +805,17 @@ button:disabled {
 
   .paper-detail h2 {
     font-size: 1.35rem;
+  }
+
+  .home-header,
+  .library-panel,
+  .online-panel,
+  .chat-paper-panel {
+    padding: 16px;
+  }
+
+  .pdf-card-grid {
+    grid-template-columns: 1fr;
   }
 }
 

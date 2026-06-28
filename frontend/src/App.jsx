@@ -1,5 +1,6 @@
 import {
   ArrowDownToLine,
+  ArrowLeft,
   Bot,
   CalendarDays,
   ExternalLink,
@@ -10,7 +11,7 @@ import {
   Send,
   User,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   chatWithPaper,
   downloadPapers,
@@ -33,13 +34,25 @@ function normalizePaper(paper) {
 function paperFromDownloadedPdf(pdf) {
   const paperId = pdf.filename.replace(/\.pdf$/i, "");
   return {
-    paper_id: paperId,
+    type: "local",
+    paperId,
+    filename: pdf.filename,
     title: pdf.filename,
-    authors: [],
-    abstract: "Local downloaded PDF. Select it to index the file, then ask questions in chat.",
-    published: formatDateTime(pdf.modified_at),
-    pdfPath: pdf.path,
-    source: "local",
+    subtitle: `${formatBytes(pdf.size_bytes)} · ${formatDateTime(pdf.modified_at)}`,
+    path: pdf.path,
+  };
+}
+
+function paperFromOnlinePaper(paper) {
+  return {
+    type: "online",
+    paperId: paper.paper_id,
+    filename: null,
+    title: paper.title,
+    subtitle: `${paper.published} · ${paper.authors?.join(", ") || "Unknown authors"}`,
+    abstract: paper.abstract,
+    pdfUrl: paper.pdfUrl,
+    arxivUrl: paper.arxivUrl,
   };
 }
 
@@ -47,33 +60,16 @@ function App() {
   const [query, setQuery] = useState(DEFAULT_QUERY);
   const [maxResults, setMaxResults] = useState(5);
   const [sortBy, setSortBy] = useState("submittedDate");
-  const [papers, setPapers] = useState([]);
-  const [selectedPaperId, setSelectedPaperId] = useState(null);
-  const [searchState, setSearchState] = useState({ loading: false, error: "" });
-  const [downloadState, setDownloadState] = useState({ loading: false, message: "", error: "" });
+  const [onlinePapers, setOnlinePapers] = useState([]);
   const [downloadedPdfs, setDownloadedPdfs] = useState([]);
-  const [pdfListState, setPdfListState] = useState({ loading: false, error: "" });
-  const [selectedPdfFilename, setSelectedPdfFilename] = useState(null);
-  const [pdfIndexState, setPdfIndexState] = useState({});
+  const [activePaper, setActivePaper] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [question, setQuestion] = useState("");
+
+  const [searchState, setSearchState] = useState({ loading: false, error: "" });
+  const [pdfListState, setPdfListState] = useState({ loading: false, error: "" });
+  const [prepareState, setPrepareState] = useState({ loading: false, error: "", message: "" });
   const [chatState, setChatState] = useState({ loading: false, error: "" });
-
-  const selectedDownloadedPdf = useMemo(
-    () => downloadedPdfs.find((pdf) => pdf.filename === selectedPdfFilename),
-    [downloadedPdfs, selectedPdfFilename],
-  );
-
-  const selectedPaper = useMemo(() => {
-    if (selectedDownloadedPdf) {
-      return paperFromDownloadedPdf(selectedDownloadedPdf);
-    }
-    return papers.find((paper) => paper.paper_id === selectedPaperId) ?? papers[0];
-  }, [papers, selectedDownloadedPdf, selectedPaperId]);
-
-  const selectedPdfIndexState = selectedPdfFilename
-    ? pdfIndexState[selectedPdfFilename] ?? { loading: false, error: "", chunksIndexed: null }
-    : null;
 
   useEffect(() => {
     void refreshDownloadedPdfs();
@@ -93,85 +89,95 @@ function App() {
   async function handleSearch(event) {
     event.preventDefault();
     setSearchState({ loading: true, error: "" });
-    setDownloadState({ loading: false, message: "", error: "" });
-    setChatMessages([]);
 
     try {
       const response = await searchPapers({ query, maxResults, sortBy });
-      const normalizedPapers = (response.papers ?? []).map(normalizePaper);
-      setPapers(normalizedPapers);
-      setSelectedPaperId(normalizedPapers[0]?.paper_id ?? null);
-      setSelectedPdfFilename(null);
+      setOnlinePapers((response.papers ?? []).map(normalizePaper));
+      setSearchState({ loading: false, error: "" });
     } catch (error) {
       setSearchState({ loading: false, error: error.message });
-      return;
-    }
-
-    setSearchState({ loading: false, error: "" });
-  }
-
-  async function handleDownloadSelected() {
-    if (!selectedPaper?.pdfUrl) return;
-    setDownloadState({ loading: true, message: "", error: "" });
-
-    try {
-      const response = await downloadPapers([selectedPaper.pdfUrl]);
-      const cachedCount = response.cached_files?.length ?? 0;
-      const file = response.files?.[0] ?? "Downloaded";
-      setDownloadState({
-        loading: false,
-        message: cachedCount ? `Cached: ${file}` : `Saved: ${file}`,
-        error: response.errors?.[0]?.error ?? "",
-      });
-      await refreshDownloadedPdfs();
-    } catch (error) {
-      setDownloadState({ loading: false, message: "", error: error.message });
     }
   }
 
-  async function handleSelectDownloadedPdf(pdf) {
-    setSelectedPdfFilename(pdf.filename);
-    setSelectedPaperId(null);
+  async function openLocalPdf(pdf) {
+    const paper = paperFromDownloadedPdf(pdf);
+    setActivePaper(paper);
     setChatMessages([]);
-    setDownloadState({ loading: false, message: "", error: "" });
-
-    setPdfIndexState((state) => ({
-      ...state,
-      [pdf.filename]: { loading: true, error: "", chunksIndexed: null },
-    }));
+    setPrepareState({ loading: true, error: "", message: "Indexing PDF for chat..." });
 
     try {
       const response = await indexDownloadedPdf(pdf.filename);
-      setPdfIndexState((state) => ({
-        ...state,
-        [pdf.filename]: {
-          loading: false,
-          error: "",
-          chunksIndexed: response.chunks_indexed,
-        },
-      }));
+      setActivePaper({ ...paper, paperId: response.paper_id });
+      setPrepareState({
+        loading: false,
+        error: "",
+        message: `Ready for chat: ${response.chunks_indexed} chunks indexed.`,
+      });
     } catch (error) {
-      setPdfIndexState((state) => ({
-        ...state,
-        [pdf.filename]: { loading: false, error: error.message, chunksIndexed: null },
-      }));
+      setPrepareState({ loading: false, error: error.message, message: "" });
     }
+  }
+
+  async function openOnlinePaper(paper) {
+    const normalized = paperFromOnlinePaper(paper);
+    setActivePaper(normalized);
+    setChatMessages([]);
+
+    if (!paper.pdfUrl) {
+      setPrepareState({ loading: false, error: "This paper does not have a PDF URL.", message: "" });
+      return;
+    }
+
+    setPrepareState({ loading: true, error: "", message: "Downloading and indexing PDF..." });
+
+    try {
+      const downloadResponse = await downloadPapers([paper.pdfUrl]);
+      const downloadedPath = downloadResponse.files?.[0];
+      if (!downloadedPath) {
+        throw new Error(downloadResponse.errors?.[0]?.error ?? "PDF download failed.");
+      }
+
+      await refreshDownloadedPdfs();
+      const filename = downloadedPath.split("/").pop();
+      const indexResponse = await indexDownloadedPdf(filename);
+      setActivePaper({
+        ...normalized,
+        type: "online-indexed",
+        paperId: indexResponse.paper_id,
+        filename,
+        path: downloadedPath,
+      });
+      setPrepareState({
+        loading: false,
+        error: downloadResponse.errors?.[0]?.error ?? "",
+        message: `Ready for chat: ${indexResponse.chunks_indexed} chunks indexed.`,
+      });
+    } catch (error) {
+      setPrepareState({ loading: false, error: error.message, message: "" });
+    }
+  }
+
+  function closeChat() {
+    setActivePaper(null);
+    setChatMessages([]);
+    setQuestion("");
+    setPrepareState({ loading: false, error: "", message: "" });
+    setChatState({ loading: false, error: "" });
   }
 
   async function handleAsk(event) {
     event.preventDefault();
     const trimmedQuestion = question.trim();
-    if (!trimmedQuestion || !selectedPaper) return;
+    if (!trimmedQuestion || !activePaper || prepareState.loading) return;
 
-    const userMessage = { role: "user", content: trimmedQuestion };
-    setChatMessages((messages) => [...messages, userMessage]);
+    setChatMessages((messages) => [...messages, { role: "user", content: trimmedQuestion }]);
     setQuestion("");
     setChatState({ loading: true, error: "" });
 
     try {
       const response = await chatWithPaper({
         question: trimmedQuestion,
-        paperIds: [selectedPaper.paper_id],
+        paperIds: [activePaper.paperId],
         topK: 5,
         scoreThreshold: 0.65,
       });
@@ -189,120 +195,197 @@ function App() {
     }
   }
 
-  return (
-    <main className="app-shell">
-      <section className="search-panel" aria-label="Paper search">
-        <div className="brand-row">
-          <div>
-            <h1>AI Research Assistant</h1>
-            <p>Search arXiv papers, inspect details, and ask grounded questions.</p>
-          </div>
-        </div>
+  if (activePaper) {
+    return (
+      <ChatWorkspace
+        activePaper={activePaper}
+        chatMessages={chatMessages}
+        chatState={chatState}
+        onAsk={handleAsk}
+        onBack={closeChat}
+        prepareState={prepareState}
+        question={question}
+        setQuestion={setQuestion}
+      />
+    );
+  }
 
-        <form className="search-form" onSubmit={handleSearch}>
-          <label className="field-label" htmlFor="paper-query">
-            Search papers
-          </label>
-          <div className="search-input-row">
-            <Search size={18} aria-hidden="true" />
-            <input
-              id="paper-query"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Agentic RAG"
-            />
-            <button type="submit" disabled={searchState.loading || !query.trim()}>
-              {searchState.loading ? "Searching" : "Search"}
+  return (
+    <main className="home-shell">
+      <header className="home-header">
+        <div>
+          <h1>AI Research Assistant</h1>
+          <p>Open an existing PDF or search arXiv, then chat with the selected paper.</p>
+        </div>
+      </header>
+
+      <section className="home-grid">
+        <section className="online-panel" aria-label="Search online PDFs">
+          <div className="section-title-row prominent">
+            <div>
+              <h2>Search Online PDFs</h2>
+              <p>Find arXiv papers and open one to chat.</p>
+            </div>
+            <Search size={20} aria-hidden="true" />
+          </div>
+
+          <form className="search-form" onSubmit={handleSearch}>
+            <label className="field-label" htmlFor="paper-query">
+              Search query
+            </label>
+            <div className="search-input-row">
+              <Search size={18} aria-hidden="true" />
+              <input
+                id="paper-query"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Agentic RAG"
+                value={query}
+              />
+              <button disabled={searchState.loading || !query.trim()} type="submit">
+                {searchState.loading ? "Searching" : "Search"}
+              </button>
+            </div>
+
+            <div className="search-controls">
+              <label>
+                Results
+                <input
+                  max="20"
+                  min="1"
+                  onChange={(event) => setMaxResults(Number(event.target.value))}
+                  type="number"
+                  value={maxResults}
+                />
+              </label>
+              <label>
+                Sort
+                <select onChange={(event) => setSortBy(event.target.value)} value={sortBy}>
+                  <option value="submittedDate">Submitted date</option>
+                  <option value="lastUpdatedDate">Last updated</option>
+                  <option value="relevance">Relevance</option>
+                </select>
+              </label>
+            </div>
+          </form>
+
+          {searchState.error ? <div className="error-box">{searchState.error}</div> : null}
+
+          <div className="online-result-list">
+            {onlinePapers.length === 0 && !searchState.loading ? (
+              <div className="empty-state compact">
+                <FileText size={22} aria-hidden="true" />
+                <span>Search results will appear here.</span>
+              </div>
+            ) : null}
+
+            {onlinePapers.map((paper) => (
+              <OnlinePaperCard key={paper.paper_id} onClick={() => openOnlinePaper(paper)} paper={paper} />
+            ))}
+          </div>
+        </section>
+
+        <section className="library-panel" aria-label="Available PDFs">
+          <div className="section-title-row prominent">
+            <div>
+              <h2>PDFs in System</h2>
+              <p>{downloadedPdfs.length ? `${downloadedPdfs.length} local files ready` : "No PDFs found yet"}</p>
+            </div>
+            <button aria-label="Refresh PDFs" disabled={pdfListState.loading} onClick={refreshDownloadedPdfs} type="button">
+              <RefreshCw size={16} aria-hidden="true" />
             </button>
           </div>
 
-          <div className="search-controls">
-            <label>
-              Results
-              <input
-                type="number"
-                min="1"
-                max="20"
-                value={maxResults}
-                onChange={(event) => setMaxResults(Number(event.target.value))}
-              />
-            </label>
-            <label>
-              Sort
-              <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
-                <option value="submittedDate">Submitted date</option>
-                <option value="lastUpdatedDate">Last updated</option>
-                <option value="relevance">Relevance</option>
-              </select>
-            </label>
+          {pdfListState.error ? <div className="error-box">{pdfListState.error}</div> : null}
+
+          <div className="pdf-card-grid">
+            {downloadedPdfs.length === 0 && !pdfListState.loading ? (
+              <div className="empty-state">
+                <FileText size={26} aria-hidden="true" />
+                <span>No downloaded PDFs found.</span>
+              </div>
+            ) : null}
+
+            {downloadedPdfs.map((pdf) => (
+              <PdfCard key={pdf.path} onClick={() => openLocalPdf(pdf)} pdf={pdf} />
+            ))}
+
+            {pdfListState.loading ? (
+              <div className="pdf-card muted">
+                <span>Loading PDFs...</span>
+              </div>
+            ) : null}
           </div>
-        </form>
+        </section>
+      </section>
+    </main>
+  );
+}
 
-        {searchState.error ? <div className="error-box">{searchState.error}</div> : null}
+function ChatWorkspace({
+  activePaper,
+  chatMessages,
+  chatState,
+  onAsk,
+  onBack,
+  prepareState,
+  question,
+  setQuestion,
+}) {
+  const chatDisabled = prepareState.loading || Boolean(prepareState.error);
 
-        <div className="result-list" aria-label="Search results">
-          {papers.length === 0 && !searchState.loading ? (
-            <div className="empty-state">
-              <FileText size={22} aria-hidden="true" />
-              <span>No papers loaded yet.</span>
-            </div>
+  return (
+    <main className="chat-workspace">
+      <section className="chat-paper-panel" aria-label="Selected paper">
+        <button className="back-button" onClick={onBack} type="button">
+          <ArrowLeft size={17} aria-hidden="true" />
+          Back
+        </button>
+
+        <div className="selected-paper-card">
+          <div className="paper-kind">{activePaper.type === "local" ? "Local PDF" : "Online PDF"}</div>
+          <h1>{activePaper.title}</h1>
+          <p>{activePaper.subtitle}</p>
+
+          <div className="action-row">
+            {activePaper.arxivUrl ? (
+              <a href={activePaper.arxivUrl} rel="noreferrer" target="_blank">
+                <ExternalLink size={16} aria-hidden="true" />
+                arXiv
+              </a>
+            ) : null}
+            {activePaper.pdfUrl ? (
+              <a href={activePaper.pdfUrl} rel="noreferrer" target="_blank">
+                <FileText size={16} aria-hidden="true" />
+                PDF
+              </a>
+            ) : null}
+            {activePaper.path ? (
+              <span className="index-badge neutral">
+                <ArrowDownToLine size={13} aria-hidden="true" />
+                Local file
+              </span>
+            ) : null}
+          </div>
+
+          {prepareState.message ? <div className="success-box">{prepareState.message}</div> : null}
+          {prepareState.error ? <div className="error-box">{prepareState.error}</div> : null}
+
+          {activePaper.abstract ? (
+            <section className="abstract-section">
+              <h2>Abstract</h2>
+              <p>{activePaper.abstract}</p>
+            </section>
           ) : null}
 
-          {papers.map((paper) => (
-            <button
-              className={`paper-result ${paper.paper_id === selectedPaper?.paper_id ? "active" : ""}`}
-              key={paper.paper_id}
-              onClick={() => {
-                setSelectedPaperId(paper.paper_id);
-                setSelectedPdfFilename(null);
-                setChatMessages([]);
-                setDownloadState({ loading: false, message: "", error: "" });
-              }}
-              type="button"
-            >
-              <span className="paper-title">{paper.title}</span>
-              <span className="paper-meta">
-                <CalendarDays size={14} aria-hidden="true" />
-                {paper.published}
-              </span>
-              <span className="author-line">{paper.authors?.join(", ") || "Unknown authors"}</span>
-            </button>
-          ))}
+          {activePaper.path ? <div className="local-path-box">{activePaper.path}</div> : null}
         </div>
-
-        <DownloadedPdfList
-          error={pdfListState.error}
-          loading={pdfListState.loading}
-          onRefresh={refreshDownloadedPdfs}
-          onSelect={handleSelectDownloadedPdf}
-          pdfs={downloadedPdfs}
-          selectedFilename={selectedPdfFilename}
-          states={pdfIndexState}
-        />
       </section>
 
-      <section className="detail-panel" aria-label="Paper detail">
-        {selectedPaper ? (
-          <PaperDetail
-            downloadState={downloadState}
-            indexState={selectedPdfIndexState}
-            onDownload={handleDownloadSelected}
-            paper={selectedPaper}
-          />
-        ) : (
-          <div className="detail-empty">
-            <FileText size={34} aria-hidden="true" />
-            <h2>Select a paper</h2>
-            <p>Run a search and choose a result to view the abstract, links, and chat context.</p>
-          </div>
-        )}
-      </section>
-
-      <section className="chat-panel" aria-label="Chat with paper">
+      <section className="chat-main-panel" aria-label="Chat with selected PDF">
         <div className="panel-header">
           <div>
-            <h2>Chat</h2>
-            <p>{selectedPaper ? selectedPaper.title : "Select a paper to begin"}</p>
+            <h2>Chat with paper</h2>
+            <p>{activePaper.title}</p>
           </div>
           <MessageSquare size={20} aria-hidden="true" />
         </div>
@@ -310,8 +393,8 @@ function App() {
         <div className="chat-log">
           {chatMessages.length === 0 ? (
             <div className="empty-state compact">
-              <Bot size={21} aria-hidden="true" />
-              <span>Ask a question grounded in the selected paper.</span>
+              <Bot size={22} aria-hidden="true" />
+              <span>{chatDisabled ? "Waiting for PDF indexing." : "Ask a grounded question about this paper."}</span>
             </div>
           ) : null}
 
@@ -329,17 +412,14 @@ function App() {
 
         {chatState.error ? <div className="error-box compact-error">{chatState.error}</div> : null}
 
-        <form className="chat-form" onSubmit={handleAsk}>
+        <form className="chat-form" onSubmit={onAsk}>
           <input
-            value={question}
+            disabled={chatDisabled || chatState.loading}
             onChange={(event) => setQuestion(event.target.value)}
-            placeholder={selectedPaper ? "Ask about method, results, limitations..." : "Select a paper first"}
-            disabled={!selectedPaper || chatState.loading || selectedPdfIndexState?.loading}
+            placeholder={chatDisabled ? "Indexing must finish before chat" : "Ask about method, results, limitations..."}
+            value={question}
           />
-          <button
-            type="submit"
-            disabled={!selectedPaper || !question.trim() || chatState.loading || selectedPdfIndexState?.loading}
-          >
+          <button disabled={chatDisabled || !question.trim() || chatState.loading} type="submit">
             <Send size={17} aria-hidden="true" />
             <span>Ask</span>
           </button>
@@ -349,110 +429,30 @@ function App() {
   );
 }
 
-function DownloadedPdfList({ error, loading, onRefresh, onSelect, pdfs, selectedFilename, states }) {
+function PdfCard({ onClick, pdf }) {
   return (
-    <section className="downloaded-section" aria-label="Downloaded PDFs">
-      <div className="section-title-row">
-        <div>
-          <h2>Downloaded PDFs</h2>
-          <p>{pdfs.length ? `${pdfs.length} local files` : "No local PDFs yet"}</p>
-        </div>
-        <button aria-label="Refresh downloaded PDFs" disabled={loading} onClick={onRefresh} type="button">
-          <RefreshCw size={16} aria-hidden="true" />
-        </button>
-      </div>
-
-      {error ? <div className="error-box">{error}</div> : null}
-
-      <div className="downloaded-list">
-        {pdfs.length === 0 && !loading ? (
-          <div className="empty-state small">
-            <FileText size={20} aria-hidden="true" />
-            <span>No downloaded PDFs found.</span>
-          </div>
-        ) : null}
-
-        {pdfs.map((pdf) => (
-          <button
-            className={`downloaded-item ${pdf.filename === selectedFilename ? "active" : ""}`}
-            key={pdf.path}
-            onClick={() => onSelect(pdf)}
-            type="button"
-          >
-            <div>
-              <span className="downloaded-name">{pdf.filename}</span>
-              <span className="downloaded-meta">
-                {formatBytes(pdf.size_bytes)} · {formatDateTime(pdf.modified_at)}
-              </span>
-            </div>
-            <span className="downloaded-path">{pdf.path}</span>
-            <PdfIndexBadge state={states[pdf.filename]} />
-          </button>
-        ))}
-
-        {loading ? (
-          <div className="downloaded-item muted">
-            <span>Loading PDFs...</span>
-          </div>
-        ) : null}
-      </div>
-    </section>
+    <button className="pdf-card" onClick={onClick} type="button">
+      <FileText size={22} aria-hidden="true" />
+      <span className="pdf-card-title">{pdf.filename}</span>
+      <span className="pdf-card-meta">
+        {formatBytes(pdf.size_bytes)} · {formatDateTime(pdf.modified_at)}
+      </span>
+      <span className="pdf-card-path">{pdf.path}</span>
+    </button>
   );
 }
 
-function PdfIndexBadge({ state }) {
-  if (!state) return <span className="index-badge neutral">Not indexed</span>;
-  if (state.loading) return <span className="index-badge neutral">Indexing...</span>;
-  if (state.error) return <span className="index-badge error">Index failed</span>;
-  if (state.chunksIndexed !== null) return <span className="index-badge success">{state.chunksIndexed} chunks</span>;
-  return null;
-}
-
-function PaperDetail({ downloadState, indexState, onDownload, paper }) {
+function OnlinePaperCard({ onClick, paper }) {
   return (
-    <article className="paper-detail">
-      <div className="detail-topline">
-        <span>{paper.paper_id}</span>
-        <span>{paper.published}</span>
-      </div>
-      <h2>{paper.title}</h2>
-      <p className="authors">{paper.authors?.join(", ") || "Unknown authors"}</p>
-
-      <div className="action-row">
-        {paper.arxivUrl ? (
-          <a href={paper.arxivUrl} rel="noreferrer" target="_blank">
-            <ExternalLink size={16} aria-hidden="true" />
-            arXiv
-          </a>
-        ) : null}
-        {paper.pdfUrl ? (
-          <a href={paper.pdfUrl} rel="noreferrer" target="_blank">
-            <FileText size={16} aria-hidden="true" />
-            PDF
-          </a>
-        ) : null}
-        {paper.source === "local" ? null : (
-          <button disabled={!paper.pdfUrl || downloadState.loading} onClick={onDownload} type="button">
-            <ArrowDownToLine size={16} aria-hidden="true" />
-            {downloadState.loading ? "Saving" : "Download"}
-          </button>
-        )}
-      </div>
-
-      {downloadState.message ? <div className="success-box">{downloadState.message}</div> : null}
-      {downloadState.error ? <div className="error-box">{downloadState.error}</div> : null}
-      {indexState?.loading ? <div className="success-box">Indexing PDF for chat...</div> : null}
-      {indexState?.chunksIndexed !== null ? (
-        <div className="success-box">Ready for chat: {indexState.chunksIndexed} chunks indexed.</div>
-      ) : null}
-      {indexState?.error ? <div className="error-box">{indexState.error}</div> : null}
-      {paper.pdfPath ? <div className="local-path-box">{paper.pdfPath}</div> : null}
-
-      <section className="abstract-section">
-        <h3>Abstract</h3>
-        <p>{paper.abstract || "No abstract available."}</p>
-      </section>
-    </article>
+    <button className="online-paper-card" onClick={onClick} type="button">
+      <span className="paper-title">{paper.title}</span>
+      <span className="paper-meta">
+        <CalendarDays size={14} aria-hidden="true" />
+        {paper.published}
+      </span>
+      <span className="author-line">{paper.authors?.join(", ") || "Unknown authors"}</span>
+      <span className="online-paper-action">Download, index, and chat</span>
+    </button>
   );
 }
 
