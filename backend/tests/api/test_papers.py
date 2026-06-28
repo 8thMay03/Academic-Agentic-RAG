@@ -8,29 +8,37 @@ from app.services.pdf_service import PDFDownloadError, PDFDownloadResult
 
 
 class FakePDFService:
-    async def download_pdf_results(
+    async def download_pdf_result(
         self,
-        pdf_urls: list[str],
+        pdf_url: str,
         destination_dir: Path,
-    ) -> list[PDFDownloadResult]:
-        assert pdf_urls == [
-            "https://arxiv.org/pdf/2606.12345v1",
-            "https://arxiv.org/pdf/2606.67890v1",
-        ]
+    ) -> PDFDownloadResult:
         assert destination_dir == Path("data") / "pdfs"
-        return [
-            PDFDownloadResult(Path("data/pdfs/2606.12345v1.pdf"), cached=False),
-            PDFDownloadResult(Path("data/pdfs/2606.67890v1.pdf"), cached=True),
-        ]
+        if pdf_url == "https://arxiv.org/pdf/2606.12345v1":
+            return PDFDownloadResult(Path("data/pdfs/2606.12345v1.pdf"), cached=False)
+        if pdf_url == "https://arxiv.org/pdf/2606.67890v1":
+            return PDFDownloadResult(Path("data/pdfs/2606.67890v1.pdf"), cached=True)
+        raise AssertionError(f"Unexpected PDF URL: {pdf_url}")
+
+
+class PartiallyFailingPDFService:
+    async def download_pdf_result(
+        self,
+        pdf_url: str,
+        destination_dir: Path,
+    ) -> PDFDownloadResult:
+        if pdf_url == "https://arxiv.org/pdf/2606.12345v1":
+            return PDFDownloadResult(Path("data/pdfs/2606.12345v1.pdf"), cached=False)
+        raise PDFDownloadError(f"Failed to download PDF: {pdf_url} returned HTTP 404")
 
 
 class FailingPDFService:
-    async def download_pdf_results(
+    async def download_pdf_result(
         self,
-        pdf_urls: list[str],
+        pdf_url: str,
         destination_dir: Path,
-    ) -> list[PDFDownloadResult]:
-        raise PDFDownloadError("Failed to download PDF: https://example.com/file.pdf")
+    ) -> PDFDownloadResult:
+        raise PDFDownloadError(f"Failed to download PDF: {pdf_url} returned HTTP 404")
 
 
 def test_download_papers_downloads_pdf_urls() -> None:
@@ -56,6 +64,39 @@ def test_download_papers_downloads_pdf_urls() -> None:
             "data/pdfs/2606.67890v1.pdf",
         ],
         "cached_files": ["data/pdfs/2606.67890v1.pdf"],
+        "errors": [],
+    }
+
+
+def test_download_papers_returns_successes_and_errors_for_partial_failure() -> None:
+    app.dependency_overrides[get_pdf_service] = lambda: PartiallyFailingPDFService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/papers/download",
+        json={
+            "pdf_urls": [
+                "https://arxiv.org/pdf/2606.12345v1",
+                "https://arxiv.org/pdf/2606.67890v1",
+            ]
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "files": ["data/pdfs/2606.12345v1.pdf"],
+        "cached_files": [],
+        "errors": [
+            {
+                "pdf_url": "https://arxiv.org/pdf/2606.67890v1",
+                "error": (
+                    "Failed to download PDF: "
+                    "https://arxiv.org/pdf/2606.67890v1 returned HTTP 404"
+                ),
+            }
+        ],
     }
 
 
@@ -71,4 +112,11 @@ def test_download_papers_returns_bad_gateway_on_download_error() -> None:
     app.dependency_overrides.clear()
 
     assert response.status_code == 502
-    assert response.json() == {"detail": "Failed to download PDF: https://example.com/file.pdf"}
+    assert response.json() == {
+        "detail": [
+            {
+                "pdf_url": "https://example.com/file.pdf",
+                "error": "Failed to download PDF: https://example.com/file.pdf returned HTTP 404",
+            }
+        ]
+    }

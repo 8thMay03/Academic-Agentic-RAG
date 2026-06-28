@@ -85,3 +85,21 @@ async def test_download_pdf_uses_cached_file_without_http_request(tmp_path) -> N
     assert result.path == cached_path
     assert result.cached is True
     assert cached_path.read_bytes() == PDF_BYTES
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_normalizes_arxiv_abs_url_to_pdf_url(tmp_path) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://arxiv.org/pdf/2606.12345v1"
+        return httpx.Response(200, content=PDF_BYTES, headers={"content-type": "application/pdf"})
+
+    async with _client_for(httpx.MockTransport(handler)) as client:
+        service = PDFService(client=client)
+
+        downloaded_path = await service.download_pdf(
+            "https://arxiv.org/abs/2606.12345v1",
+            tmp_path,
+        )
+
+    assert downloaded_path == tmp_path / "2606.12345v1.pdf"
+    assert downloaded_path.read_bytes() == PDF_BYTES

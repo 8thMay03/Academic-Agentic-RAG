@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urlunparse
 
 import httpx
 
@@ -26,7 +26,8 @@ class PDFService:
         return (await self.download_pdf_result(pdf_url, destination)).path
 
     async def download_pdf_result(self, pdf_url: str, destination: Path) -> PDFDownloadResult:
-        target_path = self._resolve_destination(pdf_url, destination)
+        normalized_pdf_url = self._normalize_pdf_url(pdf_url)
+        target_path = self._resolve_destination(normalized_pdf_url, destination)
         ensure_parent(target_path)
         if self._is_cached_pdf(target_path):
             return PDFDownloadResult(path=target_path, cached=True)
@@ -35,10 +36,10 @@ class PDFService:
 
         try:
             if self._client is not None:
-                await self._download_with_client(self._client, pdf_url, temp_path)
+                await self._download_with_client(self._client, normalized_pdf_url, temp_path)
             else:
                 async with httpx.AsyncClient(timeout=self._timeout, follow_redirects=True) as client:
-                    await self._download_with_client(client, pdf_url, temp_path)
+                    await self._download_with_client(client, normalized_pdf_url, temp_path)
 
             temp_path.replace(target_path)
             return PDFDownloadResult(path=target_path, cached=False)
@@ -71,7 +72,9 @@ class PDFService:
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
-                raise PDFDownloadError(f"Failed to download PDF: {pdf_url}") from exc
+                raise PDFDownloadError(
+                    f"Failed to download PDF: {pdf_url} returned HTTP {response.status_code}"
+                ) from exc
 
             first_chunk = b""
             with temp_path.open("wb") as file:
@@ -86,7 +89,10 @@ class PDFService:
                 raise PDFDownloadError(f"Downloaded PDF is empty: {pdf_url}")
 
             if not self._looks_like_pdf(response.headers.get("content-type"), first_chunk):
-                raise PDFDownloadError(f"Downloaded content is not a PDF: {pdf_url}")
+                content_type = response.headers.get("content-type", "unknown")
+                raise PDFDownloadError(
+                    f"Downloaded content is not a PDF: {pdf_url} returned {content_type}"
+                )
 
     @staticmethod
     def _resolve_destination(pdf_url: str, destination: Path) -> Path:
@@ -101,6 +107,19 @@ class PDFService:
             filename = f"{filename}.pdf"
 
         return destination / filename
+
+    @staticmethod
+    def _normalize_pdf_url(pdf_url: str) -> str:
+        parsed_url = urlparse(pdf_url)
+        path_parts = [part for part in parsed_url.path.split("/") if part]
+
+        if parsed_url.netloc.endswith("arxiv.org") and len(path_parts) >= 2:
+            paper_id = path_parts[1].removesuffix(".pdf")
+            if path_parts[0] in {"abs", "pdf"}:
+                normalized_path = f"/pdf/{paper_id}"
+                return urlunparse(parsed_url._replace(path=normalized_path, query="", fragment=""))
+
+        return pdf_url
 
     @staticmethod
     def _looks_like_pdf(content_type: str | None, first_chunk: bytes) -> bool:
