@@ -12,6 +12,5 @@ async def search_papers(
     request: PaperSearchRequest,
     search_service: SearchService = Depends(get_search_service),
 ) -> PaperSearchResponse:
-    papers = await search_service.search(request.query, request.max_results)
+    papers = await search_service.search(request.query, request.max_results, request.sort_by)
     return PaperSearchResponse(query=request.query, papers=papers)
-
