@@ -10,5 +10,6 @@ class RetrieverService:
         query: str,
         top_k: int = 5,
         score_threshold: float | None = None,
+        paper_ids: list[str] | None = None,
     ) -> list[dict]:
-        return await self._vector_store.similarity_search(query, top_k, score_threshold)
+        return await self._vector_store.similarity_search(query, top_k, score_threshold, paper_ids)

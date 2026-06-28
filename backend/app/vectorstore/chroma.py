@@ -40,6 +40,7 @@ class ChromaVectorStore:
         query: str,
         top_k: int = 5,
         score_threshold: float | None = None,
+        paper_ids: list[str] | None = None,
     ) -> list[dict]:
         if top_k <= 0:
             raise ValueError("top_k must be greater than 0")
@@ -50,6 +51,7 @@ class ChromaVectorStore:
         results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
+            where=self._paper_filter(paper_ids),
             include=["documents", "metadatas", "distances"],
         )
         formatted_results = self._format_query_results(results)
@@ -63,6 +65,14 @@ class ChromaVectorStore:
         if chunk_id:
             return str(chunk_id)
         return f"chunk-{index}"
+
+    @staticmethod
+    def _paper_filter(paper_ids: list[str] | None) -> dict | None:
+        if not paper_ids:
+            return None
+        if len(paper_ids) == 1:
+            return {"paper_id": paper_ids[0]}
+        return {"paper_id": {"$in": paper_ids}}
 
     @staticmethod
     def _format_query_results(results: dict) -> list[dict]:

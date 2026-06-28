@@ -179,7 +179,7 @@ function App() {
         question: trimmedQuestion,
         paperIds: [activePaper.paperId],
         topK: 5,
-        scoreThreshold: 0.65,
+        scoreThreshold: 0.25,
       });
       setChatMessages((messages) => [
         ...messages,
