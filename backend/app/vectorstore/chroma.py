@@ -35,9 +35,16 @@ class ChromaVectorStore:
             embeddings=embeddings,
         )
 
-    async def similarity_search(self, query: str, top_k: int = 5) -> list[dict]:
+    async def similarity_search(
+        self,
+        query: str,
+        top_k: int = 5,
+        score_threshold: float | None = None,
+    ) -> list[dict]:
         if top_k <= 0:
             raise ValueError("top_k must be greater than 0")
+        if score_threshold is not None and not 0 <= score_threshold <= 1:
+            raise ValueError("score_threshold must be between 0 and 1")
 
         query_embedding = await self._embedding_service.embed_query(query)
         results = self._collection.query(
@@ -45,7 +52,10 @@ class ChromaVectorStore:
             n_results=top_k,
             include=["documents", "metadatas", "distances"],
         )
-        return self._format_query_results(results)
+        formatted_results = self._format_query_results(results)
+        if score_threshold is None:
+            return formatted_results
+        return [result for result in formatted_results if result["score"] >= score_threshold]
 
     @staticmethod
     def _document_id(index: int, metadata: dict) -> str:
@@ -69,7 +79,30 @@ class ChromaVectorStore:
                     "text": documents[index],
                     "metadata": metadatas[index] or {},
                     "distance": distances[index],
+                    "score": ChromaVectorStore._distance_to_score(distances[index]),
+                    "citation": ChromaVectorStore._citation(metadatas[index] or {}, documents[index]),
                 }
             )
 
         return formatted_results
+
+    @staticmethod
+    def _distance_to_score(distance: float) -> float:
+        return 1 / (1 + max(distance, 0))
+
+    @staticmethod
+    def _citation(metadata: dict, text: str) -> dict:
+        page_number = metadata.get("page_number") or metadata.get("page")
+        try:
+            page_number = int(page_number) if page_number not in {None, ""} else None
+        except (TypeError, ValueError):
+            page_number = None
+
+        return {
+            "paper_id": metadata.get("paper_id", ""),
+            "title": metadata.get("title", ""),
+            "page_number": page_number,
+            "page": page_number,
+            "chunk_id": metadata.get("chunk_id", ""),
+            "text": text,
+        }
