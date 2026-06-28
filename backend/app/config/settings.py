@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v1"
 
     OPENAI_API_KEY: str | None = None
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     TAVILY_API_KEY: str | None = None
 
     DATA_DIR: str = "data"
@@ -23,4 +24,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
