@@ -3,10 +3,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import get_pdf_service
+from app.api.dependencies import get_pdf_index_service, get_pdf_service
 from app.config import settings as settings_module
 from app.main import app
 from app.services.pdf_service import PDFDownloadError, PDFDownloadResult
+from app.services.pdf_index_service import PDFIndexResult
 
 
 class FakePDFService:
@@ -147,25 +148,17 @@ def test_list_downloaded_pdfs_returns_existing_pdf_files(monkeypatch, tmp_path) 
 
 
 def test_index_downloaded_pdf_indexes_local_pdf(monkeypatch, tmp_path) -> None:
-    pdf_dir = tmp_path / "pdfs"
-    pdf_dir.mkdir()
-    pdf_path = pdf_dir / "paper-1.pdf"
-    pdf_path.write_bytes(b"%PDF")
-    indexed_chunks = []
+    class FakePDFIndexService:
+        async def index_downloaded_pdf(self, filename: str):
+            assert filename == "paper-1.pdf"
+            return PDFIndexResult("paper-1", "paper-1.pdf", 2)
 
-    def fake_extract_text_from_pdf(path: Path) -> str:
-        assert path == pdf_path
-        return "Page one text\fPage two text"
-
-    async def fake_index_chunks(chunks):
-        indexed_chunks.extend(chunks)
-
-    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
-    monkeypatch.setattr("app.api.routes.papers.extract_text_from_pdf", fake_extract_text_from_pdf)
-    monkeypatch.setattr("app.api.routes.papers.index_chunks", fake_index_chunks)
+    app.dependency_overrides[get_pdf_index_service] = lambda: FakePDFIndexService()
     client = TestClient(app)
 
     response = client.post("/api/v1/papers/pdfs/index", json={"filename": "paper-1.pdf"})
+
+    app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.json() == {
@@ -173,16 +166,18 @@ def test_index_downloaded_pdf_indexes_local_pdf(monkeypatch, tmp_path) -> None:
         "filename": "paper-1.pdf",
         "chunks_indexed": 2,
     }
-    assert [chunk.page_number for chunk in indexed_chunks] == [1, 2]
-    assert indexed_chunks[0].paper_id == "paper-1"
-    assert indexed_chunks[0].metadata["title"] == "paper-1.pdf"
-    assert indexed_chunks[0].metadata["source_path"].endswith("paper-1.pdf")
 
 
 def test_index_downloaded_pdf_returns_404_for_missing_file(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
+    class MissingPDFIndexService:
+        async def index_downloaded_pdf(self, filename: str):
+            raise FileNotFoundError(filename)
+
+    app.dependency_overrides[get_pdf_index_service] = lambda: MissingPDFIndexService()
     client = TestClient(app)
 
     response = client.post("/api/v1/papers/pdfs/index", json={"filename": "missing.pdf"})
+
+    app.dependency_overrides.clear()
 
     assert response.status_code == 404

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     DATA_DIR: str = "data"
     CHROMA_DIR: str = "data/chroma"
+    INDEX_LOCAL_PDFS_ON_STARTUP: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

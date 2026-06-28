@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import get_chat_service
+from app.api.dependencies import get_chat_history_store, get_chat_service
 from app.main import app
+from app.models.chat import ChatHistoryMessage
 from app.models.citation import Citation
 
 
@@ -32,8 +33,39 @@ class FakeChatService:
         )
 
 
+class FakeChatHistoryStore:
+    def __init__(self) -> None:
+        self.appended = None
+        self.messages = [
+            ChatHistoryMessage(
+                role="user",
+                content="Previous question?",
+                created_at="2026-01-01T00:00:00+00:00",
+            )
+        ]
+
+    async def append_exchange(self, paper_id, question, answer, citations):
+        self.appended = {
+            "paper_id": paper_id,
+            "question": question,
+            "answer": answer,
+            "citations": citations,
+        }
+        return self.messages
+
+    async def get_messages(self, paper_id):
+        assert paper_id == "paper-1"
+        return self.messages
+
+    async def clear(self, paper_id):
+        assert paper_id == "paper-1"
+        self.messages = []
+
+
 def test_chat_with_papers_returns_answer_and_citations() -> None:
+    history_store = FakeChatHistoryStore()
     app.dependency_overrides[get_chat_service] = lambda: FakeChatService()
+    app.dependency_overrides[get_chat_history_store] = lambda: history_store
     client = TestClient(app)
 
     response = client.post(
@@ -48,6 +80,8 @@ def test_chat_with_papers_returns_answer_and_citations() -> None:
 
     app.dependency_overrides.clear()
 
+    assert history_store.appended["paper_id"] == "paper-1"
+    assert history_store.appended["question"] == "What is the method?"
     assert response.status_code == 200
     assert response.json() == {
         "answer": "It uses planning for retrieval decisions (p. 3).",
@@ -62,3 +96,37 @@ def test_chat_with_papers_returns_answer_and_citations() -> None:
             }
         ],
     }
+
+
+def test_get_chat_history_returns_messages() -> None:
+    app.dependency_overrides[get_chat_history_store] = lambda: FakeChatHistoryStore()
+    client = TestClient(app)
+
+    response = client.get("/api/v1/chat/history/paper-1")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "paper_id": "paper-1",
+        "messages": [
+            {
+                "role": "user",
+                "content": "Previous question?",
+                "citations": [],
+                "created_at": "2026-01-01T00:00:00+00:00",
+            }
+        ],
+    }
+
+
+def test_clear_chat_history_deletes_messages() -> None:
+    app.dependency_overrides[get_chat_history_store] = lambda: FakeChatHistoryStore()
+    client = TestClient(app)
+
+    response = client.delete("/api/v1/chat/history/paper-1")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"paper_id": "paper-1", "messages": []}

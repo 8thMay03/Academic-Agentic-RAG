@@ -14,7 +14,9 @@ import {
 import { useEffect, useState } from "react";
 import {
   chatWithPaper,
+  clearChatHistory,
   downloadPapers,
+  getChatHistory,
   indexDownloadedPdf,
   listDownloadedPdfs,
   searchPapers,
@@ -70,6 +72,7 @@ function App() {
   const [pdfListState, setPdfListState] = useState({ loading: false, error: "" });
   const [prepareState, setPrepareState] = useState({ loading: false, error: "", message: "" });
   const [chatState, setChatState] = useState({ loading: false, error: "" });
+  const [historyState, setHistoryState] = useState({ loading: false, error: "" });
 
   useEffect(() => {
     void refreshDownloadedPdfs();
@@ -103,19 +106,12 @@ function App() {
     const paper = paperFromDownloadedPdf(pdf);
     setActivePaper(paper);
     setChatMessages([]);
-    setPrepareState({ loading: true, error: "", message: "Indexing PDF for chat..." });
-
-    try {
-      const response = await indexDownloadedPdf(pdf.filename);
-      setActivePaper({ ...paper, paperId: response.paper_id });
-      setPrepareState({
-        loading: false,
-        error: "",
-        message: `Ready for chat: ${response.chunks_indexed} chunks indexed.`,
-      });
-    } catch (error) {
-      setPrepareState({ loading: false, error: error.message, message: "" });
-    }
+    setPrepareState({
+      loading: false,
+      error: "",
+      message: "PDF is indexed by the system and ready for chat.",
+    });
+    await loadChatHistory(paper.paperId);
   }
 
   async function openOnlinePaper(paper) {
@@ -140,6 +136,7 @@ function App() {
       await refreshDownloadedPdfs();
       const filename = downloadedPath.split("/").pop();
       const indexResponse = await indexDownloadedPdf(filename);
+      await loadChatHistory(indexResponse.paper_id);
       setActivePaper({
         ...normalized,
         type: "online-indexed",
@@ -163,6 +160,30 @@ function App() {
     setQuestion("");
     setPrepareState({ loading: false, error: "", message: "" });
     setChatState({ loading: false, error: "" });
+    setHistoryState({ loading: false, error: "" });
+  }
+
+  async function loadChatHistory(paperId) {
+    setHistoryState({ loading: true, error: "" });
+    try {
+      const response = await getChatHistory(paperId);
+      setChatMessages(response.messages ?? []);
+      setHistoryState({ loading: false, error: "" });
+    } catch (error) {
+      setHistoryState({ loading: false, error: error.message });
+    }
+  }
+
+  async function handleClearHistory() {
+    if (!activePaper) return;
+    setHistoryState({ loading: true, error: "" });
+    try {
+      await clearChatHistory(activePaper.paperId);
+      setChatMessages([]);
+      setHistoryState({ loading: false, error: "" });
+    } catch (error) {
+      setHistoryState({ loading: false, error: error.message });
+    }
   }
 
   async function handleAsk(event) {
@@ -201,8 +222,10 @@ function App() {
         activePaper={activePaper}
         chatMessages={chatMessages}
         chatState={chatState}
+        historyState={historyState}
         onAsk={handleAsk}
         onBack={closeChat}
+        onClearHistory={handleClearHistory}
         prepareState={prepareState}
         question={question}
         setQuestion={setQuestion}
@@ -325,8 +348,10 @@ function ChatWorkspace({
   activePaper,
   chatMessages,
   chatState,
+  historyState,
   onAsk,
   onBack,
+  onClearHistory,
   prepareState,
   question,
   setQuestion,
@@ -387,14 +412,29 @@ function ChatWorkspace({
             <h2>Chat with paper</h2>
             <p>{activePaper.title}</p>
           </div>
-          <MessageSquare size={20} aria-hidden="true" />
+          <div className="chat-header-actions">
+            <button
+              disabled={historyState.loading || chatMessages.length === 0}
+              onClick={onClearHistory}
+              type="button"
+            >
+              Clear
+            </button>
+            <MessageSquare size={20} aria-hidden="true" />
+          </div>
         </div>
 
         <div className="chat-log">
           {chatMessages.length === 0 ? (
             <div className="empty-state compact">
               <Bot size={22} aria-hidden="true" />
-              <span>{chatDisabled ? "Waiting for PDF indexing." : "Ask a grounded question about this paper."}</span>
+              <span>
+                {historyState.loading
+                  ? "Loading conversation history."
+                  : chatDisabled
+                    ? "Waiting for PDF indexing."
+                    : "Ask a grounded question about this paper."}
+              </span>
             </div>
           ) : null}
 
@@ -411,6 +451,7 @@ function ChatWorkspace({
         </div>
 
         {chatState.error ? <div className="error-box compact-error">{chatState.error}</div> : null}
+        {historyState.error ? <div className="error-box compact-error">{historyState.error}</div> : null}
 
         <form className="chat-form" onSubmit={onAsk}>
           <input

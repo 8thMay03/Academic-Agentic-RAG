@@ -57,3 +57,13 @@ export async function chatWithPaper({ question, paperIds, topK, scoreThreshold }
     }),
   });
 }
+
+export async function getChatHistory(paperId) {
+  return request(`/chat/history/${encodeURIComponent(paperId)}`);
+}
+
+export async function clearChatHistory(paperId) {
+  return request(`/chat/history/${encodeURIComponent(paperId)}`, {
+    method: "DELETE",
+  });
+}
