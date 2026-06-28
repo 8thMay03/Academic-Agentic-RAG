@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v1"
 
     OPENAI_API_KEY: str | None = None
+    OPENAI_CHAT_MODEL: str = "gpt-4.1-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     TAVILY_API_KEY: str | None = None
 
