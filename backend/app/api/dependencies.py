@@ -1,5 +1,6 @@
 from app.services.compare_service import CompareService
 from app.services.llm_service import LLMService
+from app.services.pdf_service import PDFService
 from app.services.search_service import SearchService
 from app.services.summary_service import SummaryService
 
@@ -19,3 +20,6 @@ def get_summary_service() -> SummaryService:
 def get_compare_service() -> CompareService:
     return CompareService(get_llm_service())
 
+
+def get_pdf_service() -> PDFService:
+    return PDFService()
