@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -10,14 +11,26 @@ class PDFDownloadError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class PDFDownloadResult:
+    path: Path
+    cached: bool = False
+
+
 class PDFService:
     def __init__(self, client: httpx.AsyncClient | None = None, timeout: float = 60.0) -> None:
         self._client = client
         self._timeout = timeout
 
     async def download_pdf(self, pdf_url: str, destination: Path) -> Path:
+        return (await self.download_pdf_result(pdf_url, destination)).path
+
+    async def download_pdf_result(self, pdf_url: str, destination: Path) -> PDFDownloadResult:
         target_path = self._resolve_destination(pdf_url, destination)
         ensure_parent(target_path)
+        if self._is_cached_pdf(target_path):
+            return PDFDownloadResult(path=target_path, cached=True)
+
         temp_path = target_path.with_name(f"{target_path.name}.tmp")
 
         try:
@@ -28,17 +41,23 @@ class PDFService:
                     await self._download_with_client(client, pdf_url, temp_path)
 
             temp_path.replace(target_path)
-            return target_path
+            return PDFDownloadResult(path=target_path, cached=False)
         except Exception:
             temp_path.unlink(missing_ok=True)
             raise
 
     async def download_pdfs(self, pdf_urls: list[str], destination_dir: Path) -> list[Path]:
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        downloaded_paths: list[Path] = []
+        return [result.path for result in await self.download_pdf_results(pdf_urls, destination_dir)]
 
+    async def download_pdf_results(
+        self,
+        pdf_urls: list[str],
+        destination_dir: Path,
+    ) -> list[PDFDownloadResult]:
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        downloaded_paths: list[PDFDownloadResult] = []
         for pdf_url in pdf_urls:
-            downloaded_paths.append(await self.download_pdf(pdf_url, destination_dir))
+            downloaded_paths.append(await self.download_pdf_result(pdf_url, destination_dir))
 
         return downloaded_paths
 
@@ -91,3 +110,11 @@ class PDFService:
             "application/octet-stream",
             "binary/octet-stream",
         } or first_chunk.startswith(b"%PDF")
+
+    @staticmethod
+    def _is_cached_pdf(path: Path) -> bool:
+        if not path.is_file() or path.stat().st_size == 0:
+            return False
+
+        with path.open("rb") as file:
+            return file.read(16).startswith(b"%PDF")

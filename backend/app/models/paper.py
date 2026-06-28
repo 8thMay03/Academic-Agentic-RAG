@@ -25,3 +25,12 @@ class PaperSearchRequest(BaseModel):
 class PaperSearchResponse(BaseModel):
     query: str
     papers: list[Paper]
+
+
+class PaperDownloadRequest(BaseModel):
+    pdf_urls: list[HttpUrl] = Field(min_length=1, max_length=20)
+
+
+class PaperDownloadResponse(BaseModel):
+    files: list[str]
+    cached_files: list[str] = Field(default_factory=list)

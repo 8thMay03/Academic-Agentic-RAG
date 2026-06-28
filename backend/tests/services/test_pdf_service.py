@@ -64,3 +64,24 @@ async def test_download_pdf_rejects_non_pdf_content(tmp_path) -> None:
             await service.download_pdf("https://example.com/not-pdf", tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_uses_cached_file_without_http_request(tmp_path) -> None:
+    cached_path = tmp_path / "2606.12345v1.pdf"
+    cached_path.write_bytes(PDF_BYTES)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("HTTP request should not be made for cached PDFs.")
+
+    async with _client_for(httpx.MockTransport(handler)) as client:
+        service = PDFService(client=client)
+
+        result = await service.download_pdf_result(
+            "https://arxiv.org/pdf/2606.12345v1",
+            tmp_path,
+        )
+
+    assert result.path == cached_path
+    assert result.cached is True
+    assert cached_path.read_bytes() == PDF_BYTES
