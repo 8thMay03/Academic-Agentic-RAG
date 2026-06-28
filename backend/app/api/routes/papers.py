@@ -1,10 +1,9 @@
-import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.dependencies import get_pdf_service
+from app.api.dependencies import get_pdf_index_service, get_pdf_service
 from app.config.settings import settings
 from app.models.paper import (
     DownloadedPDF,
@@ -15,11 +14,8 @@ from app.models.paper import (
     PaperDownloadRequest,
     PaperDownloadResponse,
 )
-from app.parser.chunker import chunk_text_with_metadata
-from app.parser.cleaner import PAGE_BREAK, clean_text
-from app.parser.pdf_parser import extract_text_from_pdf
+from app.services.pdf_index_service import PDFIndexService
 from app.services.pdf_service import PDFDownloadError, PDFService
-from app.vectorstore.indexing import index_chunks
 
 router = APIRouter()
 
@@ -53,39 +49,22 @@ async def list_downloaded_pdfs() -> list[DownloadedPDF]:
 
 
 @router.post("/pdfs/index", response_model=DownloadedPDFIndexResponse)
-async def index_downloaded_pdf(request: DownloadedPDFIndexRequest) -> DownloadedPDFIndexResponse:
-    destination_dir = Path(settings.DATA_DIR) / "pdfs"
-    filename = Path(request.filename).name
-    pdf_path = destination_dir / filename
-
-    if not filename.lower().endswith(".pdf") or not pdf_path.is_file():
+async def index_downloaded_pdf(
+    request: DownloadedPDFIndexRequest,
+    pdf_index_service: PDFIndexService = Depends(get_pdf_index_service),
+) -> DownloadedPDFIndexResponse:
+    try:
+        result = await pdf_index_service.index_downloaded_pdf(request.filename)
+    except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Downloaded PDF not found: {request.filename}",
-        )
+        ) from exc
 
-    paper_id = Path(filename).stem
-    raw_text = await asyncio.to_thread(extract_text_from_pdf, pdf_path)
-    cleaned_pages = [
-        clean_text(page)
-        for page in raw_text.split(PAGE_BREAK)
-        if page.strip()
-    ]
-    cleaned_text = PAGE_BREAK.join(page for page in cleaned_pages if page)
-    chunks = chunk_text_with_metadata(cleaned_text, paper_id=paper_id)
-    for chunk in chunks:
-        chunk.metadata.update(
-            {
-                "title": filename,
-                "source_path": pdf_path.as_posix(),
-            }
-        )
-
-    await index_chunks(chunks)
     return DownloadedPDFIndexResponse(
-        paper_id=paper_id,
-        filename=filename,
-        chunks_indexed=len(chunks),
+        paper_id=result.paper_id,
+        filename=result.filename,
+        chunks_indexed=result.chunks_indexed,
     )
 
 

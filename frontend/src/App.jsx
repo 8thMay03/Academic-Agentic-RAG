@@ -106,20 +106,12 @@ function App() {
     const paper = paperFromDownloadedPdf(pdf);
     setActivePaper(paper);
     setChatMessages([]);
-    setPrepareState({ loading: true, error: "", message: "Indexing PDF for chat..." });
-
-    try {
-      const response = await indexDownloadedPdf(pdf.filename);
-      setActivePaper({ ...paper, paperId: response.paper_id });
-      await loadChatHistory(response.paper_id);
-      setPrepareState({
-        loading: false,
-        error: "",
-        message: `Ready for chat: ${response.chunks_indexed} chunks indexed.`,
-      });
-    } catch (error) {
-      setPrepareState({ loading: false, error: error.message, message: "" });
-    }
+    setPrepareState({
+      loading: false,
+      error: "",
+      message: "PDF is indexed by the system and ready for chat.",
+    });
+    await loadChatHistory(paper.paperId);
   }
 
   async function openOnlinePaper(paper) {
