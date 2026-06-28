@@ -1,7 +1,25 @@
 from pathlib import Path
 
+import fitz
+
+from app.parser.cleaner import PAGE_BREAK
+
+
+class PDFParseError(RuntimeError):
+    pass
+
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
-    # TODO: Implement with PyMuPDF.
-    raise NotImplementedError(f"PDF extraction is not implemented for {pdf_path}.")
+    if not pdf_path.is_file():
+        raise FileNotFoundError(f"PDF file does not exist: {pdf_path}")
 
+    try:
+        with fitz.open(pdf_path) as document:
+            page_texts = [
+                page.get_text("text", sort=True).strip()
+                for page in document
+            ]
+    except fitz.FileDataError as exc:
+        raise PDFParseError(f"Failed to parse PDF: {pdf_path}") from exc
+
+    return PAGE_BREAK.join(page_text for page_text in page_texts if page_text)
