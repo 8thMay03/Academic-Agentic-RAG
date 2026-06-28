@@ -1,8 +1,10 @@
+import os
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_pdf_service
+from app.config import settings as settings_module
 from app.main import app
 from app.services.pdf_service import PDFDownloadError, PDFDownloadResult
 
@@ -120,3 +122,67 @@ def test_download_papers_returns_bad_gateway_on_download_error() -> None:
             }
         ]
     }
+
+
+def test_list_downloaded_pdfs_returns_existing_pdf_files(monkeypatch, tmp_path) -> None:
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.mkdir()
+    first_pdf = pdf_dir / "paper-1.pdf"
+    second_pdf = pdf_dir / "paper-2.pdf"
+    first_pdf.write_bytes(b"%PDF first")
+    second_pdf.write_bytes(b"%PDF second")
+    os.utime(first_pdf, (1000, 1000))
+    os.utime(second_pdf, (2000, 2000))
+    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
+    client = TestClient(app)
+
+    response = client.get("/api/v1/papers/pdfs")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["filename"] for item in payload] == ["paper-2.pdf", "paper-1.pdf"]
+    assert payload[0]["path"].endswith("paper-2.pdf")
+    assert payload[0]["size_bytes"] == len(b"%PDF second")
+    assert payload[0]["modified_at"]
+
+
+def test_index_downloaded_pdf_indexes_local_pdf(monkeypatch, tmp_path) -> None:
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.mkdir()
+    pdf_path = pdf_dir / "paper-1.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    indexed_chunks = []
+
+    def fake_extract_text_from_pdf(path: Path) -> str:
+        assert path == pdf_path
+        return "Page one text\fPage two text"
+
+    async def fake_index_chunks(chunks):
+        indexed_chunks.extend(chunks)
+
+    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr("app.api.routes.papers.extract_text_from_pdf", fake_extract_text_from_pdf)
+    monkeypatch.setattr("app.api.routes.papers.index_chunks", fake_index_chunks)
+    client = TestClient(app)
+
+    response = client.post("/api/v1/papers/pdfs/index", json={"filename": "paper-1.pdf"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "paper_id": "paper-1",
+        "filename": "paper-1.pdf",
+        "chunks_indexed": 2,
+    }
+    assert [chunk.page_number for chunk in indexed_chunks] == [1, 2]
+    assert indexed_chunks[0].paper_id == "paper-1"
+    assert indexed_chunks[0].metadata["title"] == "paper-1.pdf"
+    assert indexed_chunks[0].metadata["source_path"].endswith("paper-1.pdf")
+
+
+def test_index_downloaded_pdf_returns_404_for_missing_file(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
+    client = TestClient(app)
+
+    response = client.post("/api/v1/papers/pdfs/index", json={"filename": "missing.pdf"})
+
+    assert response.status_code == 404
