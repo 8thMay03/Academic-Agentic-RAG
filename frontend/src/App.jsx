@@ -14,10 +14,9 @@ import {
   User,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addChatSource,
-  chatWithPaper,
   clearChatHistory,
   createChatSession,
   deleteChatSession,
@@ -29,6 +28,7 @@ import {
   listDownloadedPdfs,
   removeChatSource,
   searchPapers,
+  streamChatWithPaper,
   updateChatSessionTitle,
 } from "./api";
 
@@ -292,22 +292,68 @@ function App() {
       citations: [],
       created_at: new Date().toISOString(),
     };
-    setActiveChat((chat) => ({ ...chat, messages: [...chat.messages, optimisticMessage] }));
+    const assistantMessage = {
+      role: "assistant",
+      content: "",
+      citations: [],
+      created_at: new Date(Date.now() + 1).toISOString(),
+      streaming: true,
+    };
+    const chatId = activeChat.chat_id;
+    setActiveChat((chat) => {
+      if (!chat || chat.chat_id !== chatId) return chat;
+      return { ...chat, messages: [...chat.messages, optimisticMessage, assistantMessage] };
+    });
     setQuestion("");
     setChatState({ loading: true, error: "" });
 
     try {
-      await chatWithPaper({
+      await streamChatWithPaper({
         question: trimmedQuestion,
-        chatId: activeChat.chat_id,
+        chatId,
         topK: 5,
         scoreThreshold: 0.25,
+        onToken: (token) => {
+          setActiveChat((chat) => {
+            if (!chat || chat.chat_id !== chatId) return chat;
+            return {
+              ...chat,
+              messages: chat.messages.map((message) =>
+                message.created_at === assistantMessage.created_at
+                  ? { ...message, content: `${message.content}${token}` }
+                  : message,
+              ),
+            };
+          });
+        },
+        onCitations: (citations) => {
+          setActiveChat((chat) => {
+            if (!chat || chat.chat_id !== chatId) return chat;
+            return {
+              ...chat,
+              messages: chat.messages.map((message) =>
+                message.created_at === assistantMessage.created_at
+                  ? { ...message, citations, streaming: false }
+                  : message,
+              ),
+            };
+          });
+        },
       });
-      const session = await getChatSession(activeChat.chat_id);
-      setActiveChat(session);
+      const session = await getChatSession(chatId);
+      setActiveChat((chat) => (chat?.chat_id === chatId ? session : chat));
       setChatState({ loading: false, error: "" });
       await refreshChatThreads();
     } catch (error) {
+      setActiveChat((chat) => {
+        if (!chat || chat.chat_id !== chatId) return chat;
+        return {
+          ...chat,
+          messages: chat.messages.map((message) =>
+            message.created_at === assistantMessage.created_at ? { ...message, streaming: false } : message,
+          ),
+        };
+      });
       setChatState({ loading: false, error: error.message });
     }
   }
@@ -433,6 +479,20 @@ function ChatWorkspace({
   sourceState,
 }) {
   const canChat = activeChat.sources.length > 0 && !sourceState.loading;
+  const chatLogRef = useRef(null);
+  const questionBoxRef = useRef(null);
+
+  useEffect(() => {
+    const chatLog = chatLogRef.current;
+    if (!chatLog) return;
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }, [activeChat.chat_id, activeChat.messages, chatState.loading]);
+
+  useEffect(() => {
+    const questionBox = questionBoxRef.current;
+    if (!questionBox || question) return;
+    questionBox.style.height = "44px";
+  }, [question]);
 
   return (
     <>
@@ -484,7 +544,7 @@ function ChatWorkspace({
       {sourceState.message ? <div className="success-box compact-box">{sourceState.message}</div> : null}
       {sourceState.error ? <div className="error-box compact-box">{sourceState.error}</div> : null}
 
-      <div className="chat-log">
+      <div className="chat-log" ref={chatLogRef}>
         {activeChat.messages.length === 0 ? (
           <div className="empty-state compact">
             <Bot size={22} aria-hidden="true" />
@@ -494,21 +554,27 @@ function ChatWorkspace({
         {activeChat.messages.map((message, index) => (
           <ChatMessage key={`${message.role}-${message.created_at}-${index}`} message={message} />
         ))}
-        {chatState.loading ? (
-          <div className="message assistant">
-            <Bot size={18} aria-hidden="true" />
-            <div className="message-bubble">Thinking...</div>
-          </div>
-        ) : null}
       </div>
 
       {chatState.error ? <div className="error-box compact-error">{chatState.error}</div> : null}
 
       <form className="chat-form" onSubmit={onAsk}>
-        <input
+        <textarea
           disabled={!canChat || chatState.loading}
+          ref={questionBoxRef}
+          onInput={(event) => {
+            event.currentTarget.style.height = "44px";
+            event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 150)}px`;
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
           onChange={(event) => setQuestion(event.target.value)}
           placeholder={canChat ? "Ask across the selected sources..." : "Add sources before chatting"}
+          rows="1"
           value={question}
         />
         <button disabled={!canChat || !question.trim() || chatState.loading} type="submit">
@@ -793,11 +859,15 @@ function OnlinePaperCard({ disabled, onClick, paper }) {
 
 function ChatMessage({ message }) {
   const isUser = message.role === "user";
+  const bubbleContent = message.content || (message.streaming ? "Thinking..." : "");
   return (
     <div className={`message ${isUser ? "user" : "assistant"}`}>
       {isUser ? <User size={18} aria-hidden="true" /> : <Bot size={18} aria-hidden="true" />}
       <div className="message-content">
-        <div className="message-bubble">{message.content}</div>
+        <div className="message-bubble">
+          {bubbleContent}
+          {message.streaming && message.content ? <span className="typing-cursor" aria-hidden="true" /> : null}
+        </div>
         {message.citations?.length ? (
           <div className="citation-list">
             {message.citations.map((citation) => (

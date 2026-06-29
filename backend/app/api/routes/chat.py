@@ -1,4 +1,8 @@
+import json
+from collections.abc import AsyncIterator
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import get_chat_history_store, get_chat_service
 from app.models.chat import (
@@ -45,6 +49,53 @@ async def chat_with_papers(
             citations=citations,
         )
     return ChatResponse(answer=answer, citations=citations)
+
+
+@router.post("/stream")
+async def stream_chat_with_papers(
+    request: ChatRequest,
+    chat_service: ChatService = Depends(get_chat_service),
+    history_store: ChatHistoryStore = Depends(get_chat_history_store),
+) -> StreamingResponse:
+    paper_ids = request.paper_ids
+    history_key = request.chat_id or (request.paper_ids[0] if request.paper_ids else None)
+    if request.chat_id:
+        session = await history_store.get_session(request.chat_id)
+        if session is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {request.chat_id}")
+        paper_ids = paper_ids or [source.paper_id for source in session.sources]
+
+    async def event_stream() -> AsyncIterator[str]:
+        answer_parts: list[str] = []
+        try:
+            token_stream, citations = await chat_service.stream_answer(
+                question=request.question,
+                paper_ids=paper_ids,
+                top_k=request.top_k,
+                score_threshold=request.score_threshold,
+            )
+            async for token in token_stream:
+                answer_parts.append(token)
+                yield _stream_event("token", content=token)
+
+            answer = "".join(answer_parts)
+            if history_key:
+                await history_store.append_exchange(
+                    paper_id=history_key,
+                    question=request.question,
+                    answer=answer,
+                    citations=citations,
+                )
+            yield _stream_event("citations", citations=[citation.model_dump(mode="json") for citation in citations])
+            yield _stream_event("done")
+        except Exception as exc:
+            yield _stream_event("error", message=str(exc))
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/history", response_model=ChatThreadListResponse)
@@ -137,3 +188,7 @@ async def clear_chat_history(
 ) -> ChatHistoryResponse:
     await history_store.clear(paper_id)
     return ChatHistoryResponse(paper_id=paper_id, messages=[])
+
+
+def _stream_event(event_type: str, **payload: object) -> str:
+    return json.dumps({"type": event_type, **payload}, ensure_ascii=False) + "\n"

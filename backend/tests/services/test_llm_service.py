@@ -11,13 +11,19 @@ class FakeCompletionsClient:
         self.messages = None
         self.temperature = None
 
-    async def create(self, model: str, messages: list[dict], temperature: float):
+    async def create(self, model: str, messages: list[dict], temperature: float, stream: bool = False):
         self.model = model
         self.messages = messages
         self.temperature = temperature
+        if stream:
+            return self._stream_response()
         return SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="## Problem\n- Test summary."))]
         )
+
+    async def _stream_response(self):
+        for token in ["Hello", " world"]:
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=token))])
 
 
 class FakeChatClient:
@@ -44,6 +50,21 @@ async def test_llm_service_completes_prompt_with_openai_client() -> None:
         "content": "Summarize this paper.",
     }
     assert client.chat.completions.temperature == 0.2
+
+
+@pytest.mark.asyncio
+async def test_llm_service_streams_prompt_with_openai_client() -> None:
+    client = FakeOpenAIClient()
+    service = LLMService(client=client, model="gpt-test")
+
+    tokens = [token async for token in service.stream_complete("Stream this.")]
+
+    assert tokens == ["Hello", " world"]
+    assert client.chat.completions.model == "gpt-test"
+    assert client.chat.completions.messages[-1] == {
+        "role": "user",
+        "content": "Stream this.",
+    }
 
 
 @pytest.mark.asyncio

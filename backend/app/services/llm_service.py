@@ -1,4 +1,5 @@
 from typing import Any
+from collections.abc import AsyncIterator
 
 from openai import AsyncOpenAI
 
@@ -33,6 +34,28 @@ class LLMService:
             temperature=0.2,
         )
         return response.choices[0].message.content or ""
+
+    async def stream_complete(self, prompt: str) -> AsyncIterator[str]:
+        client = self._get_client()
+        stream = await client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a careful research assistant. "
+                        "Return concise, accurate Markdown."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+            stream=True,
+        )
+        async for chunk in stream:
+            token = chunk.choices[0].delta.content if chunk.choices else None
+            if token:
+                yield token
 
     def _get_client(self) -> Any:
         if self._client is not None:

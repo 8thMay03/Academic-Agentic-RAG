@@ -59,6 +59,81 @@ export async function chatWithPaper({ question, chatId, paperIds, topK, scoreThr
   });
 }
 
+export async function streamChatWithPaper({
+  question,
+  chatId,
+  paperIds,
+  topK,
+  scoreThreshold,
+  onToken,
+  onCitations,
+}) {
+  const response = await fetch(`${API_BASE_URL}/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      question,
+      chat_id: chatId,
+      paper_ids: paperIds,
+      top_k: topK,
+      score_threshold: scoreThreshold,
+    }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const message = payload?.detail ?? `Request failed with status ${response.status}`;
+    throw new Error(Array.isArray(message) ? JSON.stringify(message) : message);
+  }
+  if (!response.body) {
+    throw new Error("Streaming response is not available in this browser.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let answer = "";
+  let citations = [];
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.type === "token") {
+        answer += event.content ?? "";
+        onToken?.(event.content ?? "");
+      } else if (event.type === "citations") {
+        citations = event.citations ?? [];
+        onCitations?.(citations);
+      } else if (event.type === "error") {
+        throw new Error(event.message ?? "Streaming chat failed.");
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    const event = JSON.parse(buffer);
+    if (event.type === "token") {
+      answer += event.content ?? "";
+      onToken?.(event.content ?? "");
+    } else if (event.type === "citations") {
+      citations = event.citations ?? [];
+      onCitations?.(citations);
+    } else if (event.type === "error") {
+      throw new Error(event.message ?? "Streaming chat failed.");
+    }
+  }
+
+  return { answer, citations };
+}
+
 export async function getChatHistory(paperId) {
   return request(`/chat/history/${encodeURIComponent(paperId)}`);
 }

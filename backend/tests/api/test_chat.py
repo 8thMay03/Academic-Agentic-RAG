@@ -32,6 +32,36 @@ class FakeChatService:
             ],
         )
 
+    async def stream_answer(
+        self,
+        question: str,
+        paper_ids: list[str] | None = None,
+        top_k: int = 5,
+        score_threshold: float = 0.65,
+    ):
+        assert question == "What is the method?"
+        assert paper_ids == ["paper-1"]
+        assert top_k == 3
+        assert score_threshold == 0.7
+
+        async def token_stream():
+            for token in ["It ", "uses ", "planning."]:
+                yield token
+
+        return (
+            token_stream(),
+            [
+                Citation(
+                    paper_id="paper-1",
+                    title="Agentic RAG",
+                    page_number=3,
+                    page=3,
+                    chunk_id="paper-1:p3:c0",
+                    text="Agentic RAG uses planning.",
+                )
+            ],
+        )
+
 
 class FakeChatHistoryStore:
     def __init__(self) -> None:
@@ -164,6 +194,33 @@ def test_get_chat_history_returns_messages() -> None:
             }
         ],
     }
+
+
+def test_stream_chat_with_papers_returns_token_events_and_persists_history() -> None:
+    history_store = FakeChatHistoryStore()
+    app.dependency_overrides[get_chat_service] = lambda: FakeChatService()
+    app.dependency_overrides[get_chat_history_store] = lambda: history_store
+    client = TestClient(app)
+
+    with client.stream(
+        "POST",
+        "/api/v1/chat/stream",
+        json={
+            "question": "What is the method?",
+            "paper_ids": ["paper-1"],
+            "top_k": 3,
+            "score_threshold": 0.7,
+        },
+    ) as response:
+        body = response.read().decode("utf-8")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert '"type": "token", "content": "It "' in body
+    assert '"type": "citations"' in body
+    assert '"type": "done"' in body
+    assert history_store.appended["answer"] == "It uses planning."
 
 
 def test_list_chat_history_returns_threads() -> None:
