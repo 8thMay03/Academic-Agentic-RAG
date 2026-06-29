@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     DATA_DIR: str = "data"
     CHROMA_DIR: str = "data/chroma"
     INDEX_LOCAL_PDFS_ON_STARTUP: bool = True
+    RETRIEVAL_VECTOR_WEIGHT: float = 0.65
+    RETRIEVAL_KEYWORD_WEIGHT: float = 0.35
+    RETRIEVAL_CANDIDATE_MULTIPLIER: int = 4
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

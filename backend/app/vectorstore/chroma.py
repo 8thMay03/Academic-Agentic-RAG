@@ -4,6 +4,7 @@ import chromadb
 
 from app.config.settings import settings
 from app.services.embedding_service import EmbeddingService
+from app.vectorstore.bm25 import BM25Scorer
 
 
 class ChromaVectorStore:
@@ -59,6 +60,36 @@ class ChromaVectorStore:
             return formatted_results
         return [result for result in formatted_results if result["score"] >= score_threshold]
 
+    async def keyword_search(
+        self,
+        query: str,
+        top_k: int = 5,
+        score_threshold: float | None = None,
+        paper_ids: list[str] | None = None,
+    ) -> list[dict]:
+        if top_k <= 0:
+            raise ValueError("top_k must be greater than 0")
+        if score_threshold is not None and not 0 <= score_threshold <= 1:
+            raise ValueError("score_threshold must be between 0 and 1")
+
+        results = self._collection.get(
+            where=self._paper_filter(paper_ids),
+            include=["documents", "metadatas"],
+        )
+        formatted_results = self._format_get_results(results)
+        scorer = BM25Scorer([result["text"] for result in formatted_results])
+        ranked_results = []
+
+        for document_index, score in scorer.rank(query, top_k):
+            result = dict(formatted_results[document_index])
+            result["score"] = score
+            result["keyword_score"] = score
+            ranked_results.append(result)
+
+        if score_threshold is None:
+            return ranked_results
+        return [result for result in ranked_results if result["score"] >= score_threshold]
+
     @staticmethod
     def _document_id(index: int, metadata: dict) -> str:
         chunk_id = metadata.get("chunk_id")
@@ -91,6 +122,28 @@ class ChromaVectorStore:
                     "distance": distances[index],
                     "score": ChromaVectorStore._distance_to_score(distances[index]),
                     "citation": ChromaVectorStore._citation(metadatas[index] or {}, documents[index]),
+                }
+            )
+
+        return formatted_results
+
+    @staticmethod
+    def _format_get_results(results: dict) -> list[dict]:
+        ids = results.get("ids", [])
+        documents = results.get("documents", [])
+        metadatas = results.get("metadatas", [])
+
+        formatted_results = []
+        for index, document_id in enumerate(ids):
+            metadata = metadatas[index] or {}
+            document = documents[index]
+            formatted_results.append(
+                {
+                    "id": document_id,
+                    "text": document,
+                    "metadata": metadata,
+                    "score": 0.0,
+                    "citation": ChromaVectorStore._citation(metadata, document),
                 }
             )
 

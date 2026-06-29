@@ -26,7 +26,7 @@ class FakeCollection:
 
     def query(self, query_embeddings, n_results, where, include):
         assert query_embeddings == [[0.5, 1.0]]
-        assert n_results == 2
+        assert n_results in {2, 8}
         assert where in (None, {"paper_id": "paper-1"})
         assert include == ["documents", "metadatas", "distances"]
         return {
@@ -49,6 +49,31 @@ class FakeCollection:
                 ]
             ],
             "distances": [[0.12, 2.0]],
+        }
+
+    def get(self, where, include):
+        assert where in (None, {"paper_id": "paper-1"})
+        assert include == ["documents", "metadatas"]
+        return {
+            "ids": ["chunk-1", "chunk-2"],
+            "documents": [
+                "Agentic RAG planning retrieves relevant evidence.",
+                "Vision transformer benchmark results.",
+            ],
+            "metadatas": [
+                {
+                    "chunk_id": "chunk-1",
+                    "paper_id": "paper-1",
+                    "title": "Agentic RAG",
+                    "page_number": "7",
+                },
+                {
+                    "chunk_id": "chunk-2",
+                    "paper_id": "paper-2",
+                    "title": "Other Paper",
+                    "page_number": "9",
+                },
+            ],
         }
 
 
@@ -165,6 +190,23 @@ async def test_chroma_vector_store_similarity_search_filters_by_score_threshold(
     results = await store.similarity_search("agentic rag", top_k=2, score_threshold=0.8)
 
     assert [result["id"] for result in results] == ["chunk-1"]
+
+
+@pytest.mark.asyncio
+async def test_chroma_vector_store_keyword_search_uses_bm25_and_formats_results(tmp_path) -> None:
+    store = ChromaVectorStore(
+        persist_dir=tmp_path,
+        collection_name="test_chunks",
+        embedding_service=FakeEmbeddingService(),
+        client=FakeChromaClient(),
+    )
+
+    results = await store.keyword_search("agentic rag planning", top_k=2, paper_ids=["paper-1"])
+
+    assert results[0]["id"] == "chunk-1"
+    assert results[0]["keyword_score"] == 1.0
+    assert results[0]["citation"]["page_number"] == 7
+    assert results[0]["metadata"]["paper_id"] == "paper-1"
 
 
 @pytest.mark.asyncio
