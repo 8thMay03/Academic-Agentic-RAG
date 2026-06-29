@@ -5,6 +5,7 @@ from app.agent.nodes.compare_node import compare_node
 from app.agent.nodes.critic_node import critic_node
 from app.agent.nodes.download_node import download_node
 from app.agent.nodes.embed_node import embed_node
+from app.agent.nodes.intent_router_node import intent_router_node
 from app.agent.nodes.parse_node import parse_node
 from app.agent.nodes.planner_node import planner_node
 from app.agent.nodes.report_node import report_node
@@ -12,7 +13,13 @@ from app.agent.nodes.search_node import search_node
 from app.agent.nodes.select_papers_node import select_papers_node
 from app.agent.nodes.summarize_node import summarize_node
 from app.agent.state import ResearchState
-from app.agent.workflow_router import route_after_critique, route_after_search
+from app.agent.workflow_router import (
+    route_after_compare,
+    route_after_critique,
+    route_after_intent,
+    route_after_search,
+    route_after_summarize,
+)
 
 
 async def run_research_workflow(request: ResearchRequest) -> ResearchResponse:
@@ -35,6 +42,7 @@ async def run_research_workflow(request: ResearchRequest) -> ResearchResponse:
 def build_research_graph():
     workflow = StateGraph(ResearchState)
 
+    workflow.add_node("intent_router", intent_router_node)
     workflow.add_node("plan", planner_node)
     workflow.add_node("search", search_node)
     workflow.add_node("select_papers", select_papers_node)
@@ -46,7 +54,17 @@ def build_research_graph():
     workflow.add_node("report", report_node)
     workflow.add_node("critic", critic_node)
 
-    workflow.set_entry_point("plan")
+    workflow.set_entry_point("intent_router")
+    workflow.add_conditional_edges(
+        "intent_router",
+        route_after_intent,
+        {
+            "full_research": "plan",
+            "summarize": "plan",
+            "compare": "plan",
+            "question_answering": "plan",
+        },
+    )
     workflow.add_edge("plan", "search")
     workflow.add_conditional_edges(
         "search",
@@ -60,8 +78,23 @@ def build_research_graph():
     workflow.add_edge("download", "parse")
     workflow.add_edge("parse", "embed")
     workflow.add_edge("embed", "summarize")
-    workflow.add_edge("summarize", "compare")
-    workflow.add_edge("compare", "report")
+    workflow.add_conditional_edges(
+        "summarize",
+        route_after_summarize,
+        {
+            "compare": "compare",
+            "report": "report",
+            "critic": "critic",
+        },
+    )
+    workflow.add_conditional_edges(
+        "compare",
+        route_after_compare,
+        {
+            "report": "report",
+            "critic": "critic",
+        },
+    )
     workflow.add_edge("report", "critic")
     workflow.add_conditional_edges(
         "critic",

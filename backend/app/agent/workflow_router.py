@@ -1,3 +1,10 @@
+def route_after_intent(state: dict) -> str:
+    intent = state.get("user_intent", "full_research")
+    if intent in {"full_research", "summarize", "compare", "question_answering"}:
+        return intent
+    return "full_research"
+
+
 def route_after_search(state: dict) -> str:
     plan = state.get("plan") or {}
     selection_criteria = plan.get("selection_criteria") or {}
@@ -10,6 +17,22 @@ def route_after_search(state: dict) -> str:
         return "search"
 
     return "select_papers"
+
+
+def route_after_summarize(state: dict) -> str:
+    required_outputs = set((state.get("plan") or {}).get("required_outputs") or [])
+    if "comparison" in required_outputs:
+        return "compare"
+    if "report" in required_outputs:
+        return "report"
+    return "critic"
+
+
+def route_after_compare(state: dict) -> str:
+    required_outputs = set((state.get("plan") or {}).get("required_outputs") or [])
+    if "report" in required_outputs:
+        return "report"
+    return "critic"
 
 
 def route_after_critique(state: dict) -> str:

@@ -65,3 +65,78 @@ async def test_research_workflow_expands_search_and_builds_report(monkeypatch, t
     assert "Research agents need grounded retrieval" in response.summary
     assert "Planning + retrieval" in response.comparison
     assert response.report.startswith("# Research Report: agentic rag")
+
+
+@pytest.mark.asyncio
+async def test_intent_router_stops_after_summary_for_summary_requests(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_successful_research_services(monkeypatch, tmp_path)
+
+    response = await run_research_workflow(
+        ResearchRequest(query="Summarize agentic RAG", max_results=1)
+    )
+
+    assert response.papers[0].title == "Agentic RAG: A Survey"
+    assert "Research agents need grounded retrieval" in response.summary
+    assert response.comparison is None
+    assert response.report is None
+
+
+@pytest.mark.asyncio
+async def test_intent_router_stops_after_compare_for_compare_requests(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    _patch_successful_research_services(monkeypatch, tmp_path)
+
+    response = await run_research_workflow(
+        ResearchRequest(query="Compare agentic RAG methods", max_results=1)
+    )
+
+    assert response.papers[0].title == "Agentic RAG: A Survey"
+    assert "Research agents need grounded retrieval" in response.summary
+    assert "Planning + retrieval" in response.comparison
+    assert response.report is None
+
+
+def _patch_successful_research_services(monkeypatch, tmp_path) -> None:
+    pdf_path = tmp_path / "pdfs" / "2606.12345v1.pdf"
+    pdf_path.parent.mkdir(exist_ok=True)
+    pdf_path.write_bytes(b"%PDF test")
+
+    async def fake_search(self, query: str, max_results: int, sort_by: str = "submittedDate"):
+        return [
+            Paper(
+                paper_id="2606.12345v1",
+                title="Agentic RAG: A Survey",
+                authors=["Ada Lovelace"],
+                published="2026-06-20",
+                abstract="Agentic RAG combines planning, retrieval, and reflection.",
+                arxiv_url="https://arxiv.org/abs/2606.12345v1",
+                url="https://arxiv.org/abs/2606.12345v1",
+                pdf_url="https://arxiv.org/pdf/2606.12345v1",
+            )
+        ]
+
+    async def fake_download(self, pdf_url: str, destination: Path):
+        return PDFDownloadResult(pdf_path, cached=False)
+
+    async def fake_parse(self, path: Path):
+        return "Agentic RAG uses planning to decide when to retrieve and reflect."
+
+    async def fake_index(self, path: Path, force: bool = False):
+        return PDFIndexResult("2606.12345v1", path.name, 1)
+
+    async def fake_complete(self, prompt: str):
+        if "Compare these papers" in prompt:
+            return "| Paper | Method |\n| --- | --- |\n| Agentic RAG | Planning + retrieval |"
+        return "## Problem\n- Research agents need grounded retrieval."
+
+    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(SearchService, "search", fake_search)
+    monkeypatch.setattr(PDFService, "download_pdf_result", fake_download)
+    monkeypatch.setattr(ParserService, "parse_pdf", fake_parse)
+    monkeypatch.setattr(PDFIndexService, "index_pdf", fake_index)
+    monkeypatch.setattr(LLMService, "complete", fake_complete)
