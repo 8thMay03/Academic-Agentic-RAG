@@ -79,6 +79,18 @@ async def test_chat_history_store_adds_sources_to_session(tmp_path) -> None:
     assert (await store.get_session(session.chat_id)).sources[0].title == "Agentic RAG.pdf"
 
 
+async def test_chat_history_store_updates_session_title(tmp_path) -> None:
+    store = ChatHistoryStore(base_dir=tmp_path)
+    session = await store.create_session("Draft title")
+
+    updated_session = await store.update_session_title(session.chat_id, "  Better title  ")
+    threads = await store.list_threads()
+
+    assert updated_session.title == "Better title"
+    assert (await store.get_session(session.chat_id)).title == "Better title"
+    assert threads[0].title == "Better title"
+
+
 async def test_chat_history_store_deletes_session(tmp_path) -> None:
     store = ChatHistoryStore(base_dir=tmp_path)
     session = await store.create_session("Disposable chat")

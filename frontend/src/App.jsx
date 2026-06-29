@@ -5,6 +5,7 @@ import {
   FileText,
   Library,
   MessageSquare,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -28,6 +29,7 @@ import {
   listDownloadedPdfs,
   removeChatSource,
   searchPapers,
+  updateChatSessionTitle,
 } from "./api";
 
 const DEFAULT_QUERY = "Agentic RAG";
@@ -67,6 +69,8 @@ function App() {
   const [sourceTab, setSourceTab] = useState("local");
   const [paperOverlay, setPaperOverlay] = useState(null);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
+  const [renameCandidate, setRenameCandidate] = useState(null);
+  const [renameTitle, setRenameTitle] = useState("");
 
   const [chatListState, setChatListState] = useState({ loading: false, error: "" });
   const [pdfListState, setPdfListState] = useState({ loading: false, error: "" });
@@ -141,6 +145,35 @@ function App() {
         setIsSourceModalOpen(false);
         setPaperOverlay(null);
       }
+      await refreshChatThreads();
+    } catch (error) {
+      setChatListState({ loading: false, error: error.message });
+    }
+  }
+
+  function openRenameDialog(chat) {
+    setRenameCandidate(chat);
+    setRenameTitle(chat.title ?? "");
+  }
+
+  async function renameChat(event) {
+    event.preventDefault();
+    if (!renameCandidate) return;
+
+    const trimmedTitle = renameTitle.trim();
+    if (!trimmedTitle) {
+      setChatListState({ loading: false, error: "Chat title cannot be empty." });
+      return;
+    }
+
+    setChatListState({ loading: true, error: "" });
+    try {
+      const session = await updateChatSessionTitle(renameCandidate.chat_id, trimmedTitle);
+      if (activeChat?.chat_id === session.chat_id) {
+        setActiveChat(session);
+      }
+      setRenameCandidate(null);
+      setRenameTitle("");
       await refreshChatThreads();
     } catch (error) {
       setChatListState({ loading: false, error: error.message });
@@ -307,6 +340,7 @@ function App() {
               key={thread.chat_id}
               onDelete={() => setDeleteCandidate(thread)}
               onClick={() => openChat(thread.chat_id)}
+              onRename={() => openRenameDialog(thread)}
               thread={thread}
             />
           ))}
@@ -323,6 +357,7 @@ function App() {
             onAsk={handleAsk}
             onClearHistory={handleClearHistory}
             onOpenSource={setPaperOverlay}
+            onRename={() => openRenameDialog(activeChat)}
             onRemoveSource={removeSource}
             question={question}
             setQuestion={setQuestion}
@@ -367,6 +402,19 @@ function App() {
           onConfirm={() => deleteChat(deleteCandidate.chat_id)}
         />
       ) : null}
+
+      {renameCandidate ? (
+        <RenameChatDialog
+          onCancel={() => {
+            setRenameCandidate(null);
+            setRenameTitle("");
+          }}
+          onChange={setRenameTitle}
+          onSubmit={renameChat}
+          renaming={chatListState.loading}
+          title={renameTitle}
+        />
+      ) : null}
     </main>
   );
 }
@@ -378,6 +426,7 @@ function ChatWorkspace({
   onAsk,
   onClearHistory,
   onOpenSource,
+  onRename,
   onRemoveSource,
   question,
   setQuestion,
@@ -397,6 +446,10 @@ function ChatWorkspace({
           </p>
         </div>
         <div className="workspace-actions">
+          <button className="secondary-action" onClick={onRename} type="button">
+            <Pencil size={16} aria-hidden="true" />
+            Rename
+          </button>
           <button className="secondary-action" disabled={activeChat.messages.length === 0 || chatState.loading} onClick={onClearHistory} type="button">
             Clear
           </button>
@@ -666,7 +719,44 @@ function ConfirmDeleteChatDialog({ chat, deleting, onCancel, onConfirm }) {
   );
 }
 
-function ChatThreadCard({ active, onClick, onDelete, thread }) {
+function RenameChatDialog({ onCancel, onChange, onSubmit, renaming, title }) {
+  return (
+    <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Rename chat">
+      <form className="rename-dialog" onSubmit={onSubmit}>
+        <header className="rename-header">
+          <div>
+            <h2>Rename chat</h2>
+            <p>Give this conversation a name that is easier to find later.</p>
+          </div>
+          <button aria-label="Close" disabled={renaming} onClick={onCancel} type="button">
+            <X size={18} aria-hidden="true" />
+          </button>
+        </header>
+        <label className="rename-field">
+          Chat name
+          <input
+            autoFocus
+            maxLength={160}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="Literature review"
+            value={title}
+          />
+        </label>
+        <div className="confirm-actions">
+          <button className="secondary-action" disabled={renaming} onClick={onCancel} type="button">
+            Cancel
+          </button>
+          <button className="primary-action" disabled={renaming || !title.trim()} type="submit">
+            <Pencil size={16} aria-hidden="true" />
+            {renaming ? "Saving" : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ChatThreadCard({ active, onClick, onDelete, onRename, thread }) {
   return (
     <div className={`chat-thread-card ${active ? "active" : ""}`}>
       <button className="chat-thread-open" onClick={onClick} type="button">
@@ -676,6 +766,9 @@ function ChatThreadCard({ active, onClick, onDelete, thread }) {
         <span className="chat-thread-meta">
           {thread.source_count} sources · {thread.message_count} messages · {formatDateTime(thread.updated_at)}
         </span>
+      </button>
+      <button aria-label={`Rename ${thread.title}`} className="chat-thread-edit" onClick={onRename} type="button">
+        <Pencil size={15} aria-hidden="true" />
       </button>
       <button aria-label={`Delete ${thread.title}`} className="chat-thread-delete" onClick={onDelete} type="button">
         <Trash2 size={15} aria-hidden="true" />

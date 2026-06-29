@@ -84,6 +84,13 @@ export async function deleteChatSession(chatId) {
   });
 }
 
+export async function updateChatSessionTitle(chatId, title) {
+  return request(`/chat/sessions/${encodeURIComponent(chatId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
 export async function addChatSource(chatId, source) {
   return request(`/chat/sessions/${encodeURIComponent(chatId)}/sources`, {
     method: "POST",

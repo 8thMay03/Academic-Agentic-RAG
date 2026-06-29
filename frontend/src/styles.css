@@ -392,7 +392,7 @@ button:disabled {
 
 .chat-thread-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr) 34px 34px;
   align-items: stretch;
   border: 1px solid #d4dce5;
   background: #ffffff;
@@ -423,6 +423,7 @@ button:disabled {
   color: #2f6f78;
 }
 
+.chat-thread-edit,
 .chat-thread-delete {
   display: inline-flex;
   align-items: center;
@@ -433,6 +434,11 @@ button:disabled {
   border-left: 1px solid #d4dce5;
   background: transparent;
   color: #667487;
+}
+
+.chat-thread-edit:hover {
+  background: #e8f2f2;
+  color: #173d43;
 }
 
 .chat-thread-delete:hover {
@@ -485,7 +491,8 @@ button:disabled {
 
 .sources-modal,
 .paper-overlay,
-.confirm-dialog {
+.confirm-dialog,
+.rename-dialog {
   display: flex;
   width: min(980px, 100%);
   max-height: calc(100vh - 44px);
@@ -510,6 +517,74 @@ button:disabled {
   gap: 14px;
   width: min(460px, 100%);
   padding: 18px;
+}
+
+.rename-dialog {
+  width: min(460px, 100%);
+}
+
+.rename-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid #d8e0e8;
+  padding: 18px;
+}
+
+.rename-header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.18rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.rename-header p {
+  margin: 6px 0 0;
+  color: #405063;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.rename-header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #c2ced9;
+  background: #ffffff;
+  color: #405063;
+}
+
+.rename-header button:hover {
+  border-color: #2f6f78;
+  background: #e8f2f2;
+  color: #173d43;
+}
+
+.rename-field {
+  display: grid;
+  gap: 7px;
+  padding: 18px;
+  color: #364254;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.rename-field input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #bac7d4;
+  outline: 0;
+  background: #ffffff;
+  color: #17202a;
+  padding: 0 12px;
+  text-transform: none;
+  font-size: 0.95rem;
+  font-weight: 400;
 }
 
 .confirm-icon {
@@ -863,7 +938,8 @@ button:disabled {
 
   .sources-modal,
   .paper-overlay,
-  .confirm-dialog {
+  .confirm-dialog,
+  .rename-dialog {
     max-height: calc(100vh - 20px);
   }
 
@@ -874,6 +950,11 @@ button:disabled {
 
   .confirm-dialog {
     grid-template-columns: 1fr;
+  }
+
+  .rename-header,
+  .rename-field {
+    padding: 14px;
   }
 }
 

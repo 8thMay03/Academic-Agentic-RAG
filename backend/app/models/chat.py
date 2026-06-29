@@ -49,6 +49,10 @@ class ChatSessionCreateRequest(BaseModel):
     title: str | None = None
 
 
+class ChatSessionUpdateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+
+
 class ChatSourceAddRequest(ChatSource):
     pass
 

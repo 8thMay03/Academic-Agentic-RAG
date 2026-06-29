@@ -7,6 +7,7 @@ from app.models.chat import (
     ChatResponse,
     ChatSession,
     ChatSessionCreateRequest,
+    ChatSessionUpdateRequest,
     ChatSourceAddRequest,
     ChatThreadListResponse,
 )
@@ -80,6 +81,21 @@ async def delete_chat_session(
     deleted = await history_store.delete_session(chat_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {chat_id}")
+
+
+@router.patch("/sessions/{chat_id}", response_model=ChatSession)
+async def update_chat_session(
+    chat_id: str,
+    request: ChatSessionUpdateRequest,
+    history_store: ChatHistoryStore = Depends(get_chat_history_store),
+) -> ChatSession:
+    try:
+        session = await history_store.update_session_title(chat_id, request.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {chat_id}")
+    return session
 
 
 @router.post("/sessions/{chat_id}/sources", response_model=ChatSession)

@@ -102,6 +102,11 @@ class FakeChatHistoryStore:
         assert chat_id == "chat-1"
         return True
 
+    async def update_session_title(self, chat_id, title):
+        assert chat_id == "chat-1"
+        self.session.title = title.strip()
+        return self.session
+
 
 def test_chat_with_papers_returns_answer_and_citations() -> None:
     history_store = FakeChatHistoryStore()
@@ -205,3 +210,15 @@ def test_delete_chat_session_removes_chat() -> None:
     app.dependency_overrides.clear()
 
     assert response.status_code == 204
+
+
+def test_update_chat_session_renames_chat() -> None:
+    app.dependency_overrides[get_chat_history_store] = lambda: FakeChatHistoryStore()
+    client = TestClient(app)
+
+    response = client.patch("/api/v1/chat/sessions/chat-1", json={"title": "Updated title"})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Updated title"

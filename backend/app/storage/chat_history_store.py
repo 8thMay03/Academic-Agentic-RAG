@@ -31,11 +31,10 @@ class ChatHistoryStore:
 
             session = self._session_from_payload(json.loads(path.read_text(encoding="utf-8")), path)
             last_message = session.messages[-1] if session.messages else None
-            first_user_message = next((message for message in session.messages if message.role == "user"), None)
             threads.append(
                 ChatThread(
                     chat_id=session.chat_id,
-                    title=first_user_message.content if first_user_message else session.title,
+                    title=session.title,
                     last_message=last_message.content if last_message else "No messages yet.",
                     updated_at=last_message.created_at if last_message else session.updated_at,
                     message_count=len(session.messages),
@@ -62,6 +61,20 @@ class ChatHistoryStore:
         if not path.is_file():
             return None
         return self._session_from_payload(json.loads(path.read_text(encoding="utf-8")), path)
+
+    async def update_session_title(self, chat_id: str, title: str) -> ChatSession | None:
+        session = await self.get_session(chat_id)
+        if session is None:
+            return None
+
+        trimmed_title = title.strip()
+        if not trimmed_title:
+            raise ValueError("Chat title cannot be empty.")
+
+        session.title = trimmed_title
+        session.updated_at = self._timestamp()
+        self._write_session(session)
+        return session
 
     async def add_source(self, chat_id: str, source: ChatSource) -> ChatSession:
         session = await self.get_session(chat_id)
@@ -121,7 +134,7 @@ class ChatHistoryStore:
         )
         session.messages = messages
         session.updated_at = created_at
-        if session.title == "New chat":
+        if session.title in {"New chat", paper_id}:
             session.title = question
         self._write_session(session)
         return messages
