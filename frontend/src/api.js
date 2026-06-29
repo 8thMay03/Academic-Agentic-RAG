@@ -67,3 +67,7 @@ export async function clearChatHistory(paperId) {
     method: "DELETE",
   });
 }
+
+export function getPdfFileUrl(filename) {
+  return `${API_BASE_URL}/papers/pdfs/${encodeURIComponent(filename)}/content`;
+}

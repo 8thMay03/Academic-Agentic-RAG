@@ -147,6 +147,30 @@ def test_list_downloaded_pdfs_returns_existing_pdf_files(monkeypatch, tmp_path) 
     assert payload[0]["modified_at"]
 
 
+def test_get_downloaded_pdf_content_returns_inline_pdf(monkeypatch, tmp_path) -> None:
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.mkdir()
+    pdf_file = pdf_dir / "paper-1.pdf"
+    pdf_file.write_bytes(b"%PDF paper content")
+    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
+    client = TestClient(app)
+
+    response = client.get("/api/v1/papers/pdfs/paper-1.pdf/content")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content == b"%PDF paper content"
+
+
+def test_get_downloaded_pdf_content_returns_404_for_missing_pdf(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
+    client = TestClient(app)
+
+    response = client.get("/api/v1/papers/pdfs/missing.pdf/content")
+
+    assert response.status_code == 404
+
+
 def test_index_downloaded_pdf_indexes_local_pdf(monkeypatch, tmp_path) -> None:
     class FakePDFIndexService:
         async def index_downloaded_pdf(self, filename: str):

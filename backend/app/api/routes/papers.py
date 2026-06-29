@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 
 from app.api.dependencies import get_pdf_index_service, get_pdf_service
 from app.config.settings import settings
@@ -46,6 +47,23 @@ async def list_downloaded_pdfs() -> list[DownloadedPDF]:
         for path in pdf_files
         if path.is_file()
     ]
+
+
+@router.get("/pdfs/{filename}/content")
+async def get_downloaded_pdf_content(filename: str) -> FileResponse:
+    pdf_path = _downloaded_pdf_path(filename)
+    if not pdf_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Downloaded PDF not found: {filename}",
+        )
+
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename=pdf_path.name,
+        content_disposition_type="inline",
+    )
 
 
 @router.post("/pdfs/index", response_model=DownloadedPDFIndexResponse)
@@ -94,3 +112,13 @@ async def download_papers(
     files = [result.path.as_posix() for result in results]
     cached_files = [result.path.as_posix() for result in results if result.cached]
     return PaperDownloadResponse(files=files, cached_files=cached_files, errors=errors)
+
+
+def _downloaded_pdf_path(filename: str) -> Path:
+    normalized_filename = Path(filename).name
+    if normalized_filename != filename or not normalized_filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Downloaded PDF not found: {filename}",
+        )
+    return Path(settings.DATA_DIR) / "pdfs" / normalized_filename
