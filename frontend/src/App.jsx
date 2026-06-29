@@ -3,6 +3,8 @@ import {
   ArrowLeft,
   Bot,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   FileText,
   MessageSquare,
@@ -17,6 +19,7 @@ import {
   clearChatHistory,
   downloadPapers,
   getChatHistory,
+  getPdfFileUrl,
   indexDownloadedPdf,
   listDownloadedPdfs,
   searchPapers,
@@ -218,7 +221,7 @@ function App() {
 
   if (activePaper) {
     return (
-      <ChatWorkspace
+      <PaperDetailWorkspace
         activePaper={activePaper}
         chatMessages={chatMessages}
         chatState={chatState}
@@ -344,7 +347,7 @@ function App() {
   );
 }
 
-function ChatWorkspace({
+function PaperDetailWorkspace({
   activePaper,
   chatMessages,
   chatState,
@@ -356,30 +359,43 @@ function ChatWorkspace({
   question,
   setQuestion,
 }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [viewerRevision, setViewerRevision] = useState(0);
   const chatDisabled = prepareState.loading || Boolean(prepareState.error);
+  const localPdfUrl = activePaper.filename ? getPdfFileUrl(activePaper.filename) : null;
+  const pdfUrl = localPdfUrl ?? activePaper.pdfUrl ?? null;
+
+  function goToPage(pageNumber) {
+    const nextPage = Number(pageNumber);
+    if (!Number.isFinite(nextPage) || nextPage < 1) return;
+    setCurrentPage(Math.floor(nextPage));
+    setViewerRevision((revision) => revision + 1);
+  }
 
   return (
-    <main className="chat-workspace">
-      <section className="chat-paper-panel" aria-label="Selected paper">
-        <button className="back-button" onClick={onBack} type="button">
-          <ArrowLeft size={17} aria-hidden="true" />
-          Back
-        </button>
+    <main className="paper-detail-workspace">
+      <section className="paper-reader-panel" aria-label="Paper detail">
+        <div className="paper-detail-header">
+          <button className="back-button" onClick={onBack} type="button">
+            <ArrowLeft size={17} aria-hidden="true" />
+            Back
+          </button>
 
-        <div className="selected-paper-card">
-          <div className="paper-kind">{activePaper.type === "local" ? "Local PDF" : "Online PDF"}</div>
-          <h1>{activePaper.title}</h1>
-          <p>{activePaper.subtitle}</p>
+          <div className="paper-detail-title">
+            <div className="paper-kind">{activePaper.type === "local" ? "Local PDF" : "Online PDF"}</div>
+            <h1>{activePaper.title}</h1>
+            <p>{activePaper.subtitle}</p>
+          </div>
 
-          <div className="action-row">
+          <div className="action-row compact-actions">
             {activePaper.arxivUrl ? (
               <a href={activePaper.arxivUrl} rel="noreferrer" target="_blank">
                 <ExternalLink size={16} aria-hidden="true" />
                 arXiv
               </a>
             ) : null}
-            {activePaper.pdfUrl ? (
-              <a href={activePaper.pdfUrl} rel="noreferrer" target="_blank">
+            {pdfUrl ? (
+              <a href={pdfUrl} rel="noreferrer" target="_blank">
                 <FileText size={16} aria-hidden="true" />
                 PDF
               </a>
@@ -391,22 +407,27 @@ function ChatWorkspace({
               </span>
             ) : null}
           </div>
-
-          {prepareState.message ? <div className="success-box">{prepareState.message}</div> : null}
-          {prepareState.error ? <div className="error-box">{prepareState.error}</div> : null}
-
-          {activePaper.abstract ? (
-            <section className="abstract-section">
-              <h2>Abstract</h2>
-              <p>{activePaper.abstract}</p>
-            </section>
-          ) : null}
-
-          {activePaper.path ? <div className="local-path-box">{activePaper.path}</div> : null}
         </div>
+
+        {prepareState.message ? <div className="success-box detail-status">{prepareState.message}</div> : null}
+        {prepareState.error ? <div className="error-box detail-status">{prepareState.error}</div> : null}
+
+        {activePaper.abstract ? (
+          <details className="abstract-drawer">
+            <summary>Abstract</summary>
+            <p>{activePaper.abstract}</p>
+          </details>
+        ) : null}
+
+        <PdfViewer
+          currentPage={currentPage}
+          onPageChange={goToPage}
+          pdfUrl={pdfUrl}
+          viewerRevision={viewerRevision}
+        />
       </section>
 
-      <section className="chat-main-panel" aria-label="Chat with selected PDF">
+      <aside className="chat-sidebar-panel" aria-label="Chat with selected PDF">
         <div className="panel-header">
           <div>
             <h2>Chat with paper</h2>
@@ -439,7 +460,11 @@ function ChatWorkspace({
           ) : null}
 
           {chatMessages.map((message, index) => (
-            <ChatMessage key={`${message.role}-${index}`} message={message} />
+            <ChatMessage
+              key={`${message.role}-${index}`}
+              message={message}
+              onCitationClick={goToPage}
+            />
           ))}
 
           {chatState.loading ? (
@@ -465,8 +490,59 @@ function ChatWorkspace({
             <span>Ask</span>
           </button>
         </form>
-      </section>
+      </aside>
     </main>
+  );
+}
+
+function PdfViewer({ currentPage, onPageChange, pdfUrl, viewerRevision }) {
+  const viewerSrc = pdfUrl ? `${pdfUrl}#page=${currentPage}&view=FitH` : "";
+
+  return (
+    <section className="pdf-viewer-panel" aria-label="PDF viewer">
+      <div className="pdf-viewer-toolbar">
+        <div className="page-stepper">
+          <button
+            aria-label="Previous page"
+            disabled={currentPage <= 1}
+            onClick={() => onPageChange(currentPage - 1)}
+            type="button"
+          >
+            <ChevronLeft size={16} aria-hidden="true" />
+          </button>
+          <label>
+            Page
+            <input
+              min="1"
+              onChange={(event) => onPageChange(event.target.value)}
+              type="number"
+              value={currentPage}
+            />
+          </label>
+          <button
+            aria-label="Next page"
+            onClick={() => onPageChange(currentPage + 1)}
+            type="button"
+          >
+            <ChevronRight size={16} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      {viewerSrc ? (
+        <iframe
+          key={`${viewerSrc}-${viewerRevision}`}
+          className="pdf-frame"
+          src={viewerSrc}
+          title="Paper PDF"
+        />
+      ) : (
+        <div className="pdf-placeholder">
+          <FileText size={28} aria-hidden="true" />
+          <span>PDF unavailable.</span>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -497,7 +573,7 @@ function OnlinePaperCard({ onClick, paper }) {
   );
 }
 
-function ChatMessage({ message }) {
+function ChatMessage({ message, onCitationClick }) {
   const isUser = message.role === "user";
   return (
     <div className={`message ${isUser ? "user" : "assistant"}`}>
@@ -507,10 +583,15 @@ function ChatMessage({ message }) {
         {message.citations?.length ? (
           <div className="citation-list">
             {message.citations.map((citation) => (
-              <span key={citation.chunk_id ?? `${citation.paper_id}-${citation.page_number}`}>
+              <button
+                disabled={!citation.page_number}
+                key={citation.chunk_id ?? `${citation.paper_id}-${citation.page_number}`}
+                onClick={() => onCitationClick(citation.page_number)}
+                type="button"
+              >
                 {citation.title || citation.paper_id}
                 {citation.page_number ? `, p. ${citation.page_number}` : ""}
-              </span>
+              </button>
             ))}
           </div>
         ) : null}
