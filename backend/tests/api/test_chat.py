@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_chat_history_store, get_chat_service
 from app.main import app
-from app.models.chat import ChatHistoryMessage
+from app.models.chat import ChatHistoryMessage, ChatSession, ChatSource, ChatThread
 from app.models.citation import Citation
 
 
@@ -43,6 +43,14 @@ class FakeChatHistoryStore:
                 created_at="2026-01-01T00:00:00+00:00",
             )
         ]
+        self.session = ChatSession(
+            chat_id="chat-1",
+            title="Research chat",
+            sources=[ChatSource(paper_id="paper-1", title="Agentic RAG.pdf")],
+            messages=self.messages,
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+        )
 
     async def append_exchange(self, paper_id, question, answer, citations):
         self.appended = {
@@ -60,6 +68,35 @@ class FakeChatHistoryStore:
     async def clear(self, paper_id):
         assert paper_id == "paper-1"
         self.messages = []
+
+    async def list_threads(self):
+        return [
+            ChatThread(
+                chat_id="paper-1",
+                title="Previous question?",
+                last_message="Previous question?",
+                updated_at="2026-01-01T00:00:00+00:00",
+                message_count=1,
+                source_count=1,
+            )
+        ]
+
+    async def create_session(self, title=None):
+        return self.session
+
+    async def get_session(self, chat_id):
+        assert chat_id == "chat-1"
+        return self.session
+
+    async def add_source(self, chat_id, source):
+        assert chat_id == "chat-1"
+        self.session.sources.append(source)
+        return self.session
+
+    async def remove_source(self, chat_id, paper_id):
+        assert chat_id == "chat-1"
+        self.session.sources = [source for source in self.session.sources if source.paper_id != paper_id]
+        return self.session
 
 
 def test_chat_with_papers_returns_answer_and_citations() -> None:
@@ -117,6 +154,29 @@ def test_get_chat_history_returns_messages() -> None:
                 "created_at": "2026-01-01T00:00:00+00:00",
             }
         ],
+    }
+
+
+def test_list_chat_history_returns_threads() -> None:
+    app.dependency_overrides[get_chat_history_store] = lambda: FakeChatHistoryStore()
+    client = TestClient(app)
+
+    response = client.get("/api/v1/chat/history")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "chats": [
+            {
+                "chat_id": "paper-1",
+                "title": "Previous question?",
+                "last_message": "Previous question?",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "message_count": 1,
+                "source_count": 1,
+            }
+        ]
     }
 
 

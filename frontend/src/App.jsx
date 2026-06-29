@@ -1,27 +1,31 @@
 import {
   ArrowDownToLine,
-  ArrowLeft,
   Bot,
   CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
   FileText,
+  Library,
   MessageSquare,
+  Plus,
   RefreshCw,
   Search,
   Send,
+  Trash2,
   User,
+  X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  addChatSource,
   chatWithPaper,
   clearChatHistory,
+  createChatSession,
   downloadPapers,
-  getChatHistory,
+  getChatSession,
   getPdfFileUrl,
   indexDownloadedPdf,
+  listChatThreads,
   listDownloadedPdfs,
+  removeChatSource,
   searchPapers,
 } from "./api";
 
@@ -36,28 +40,16 @@ function normalizePaper(paper) {
   };
 }
 
-function paperFromDownloadedPdf(pdf) {
-  const paperId = pdf.filename.replace(/\.pdf$/i, "");
-  return {
-    type: "local",
-    paperId,
-    filename: pdf.filename,
-    title: pdf.filename,
-    subtitle: `${formatBytes(pdf.size_bytes)} · ${formatDateTime(pdf.modified_at)}`,
-    path: pdf.path,
-  };
+function paperIdFromFilename(filename) {
+  return filename.replace(/\.pdf$/i, "");
 }
 
-function paperFromOnlinePaper(paper) {
+function sourceFromPdf(pdf, paperId = paperIdFromFilename(pdf.filename)) {
   return {
-    type: "online",
-    paperId: paper.paper_id,
-    filename: null,
-    title: paper.title,
-    subtitle: `${paper.published} · ${paper.authors?.join(", ") || "Unknown authors"}`,
-    abstract: paper.abstract,
-    pdfUrl: paper.pdfUrl,
-    arxivUrl: paper.arxivUrl,
+    paper_id: paperId,
+    title: pdf.filename,
+    filename: pdf.filename,
+    path: pdf.path,
   };
 }
 
@@ -67,19 +59,36 @@ function App() {
   const [sortBy, setSortBy] = useState("submittedDate");
   const [onlinePapers, setOnlinePapers] = useState([]);
   const [downloadedPdfs, setDownloadedPdfs] = useState([]);
-  const [activePaper, setActivePaper] = useState(null);
-  const [chatMessages, setChatMessages] = useState([]);
+  const [chatThreads, setChatThreads] = useState([]);
+  const [activeChat, setActiveChat] = useState(null);
   const [question, setQuestion] = useState("");
+  const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
+  const [sourceTab, setSourceTab] = useState("local");
+  const [paperOverlay, setPaperOverlay] = useState(null);
 
-  const [searchState, setSearchState] = useState({ loading: false, error: "" });
+  const [chatListState, setChatListState] = useState({ loading: false, error: "" });
   const [pdfListState, setPdfListState] = useState({ loading: false, error: "" });
-  const [prepareState, setPrepareState] = useState({ loading: false, error: "", message: "" });
+  const [searchState, setSearchState] = useState({ loading: false, error: "" });
+  const [sourceState, setSourceState] = useState({ loading: false, error: "", message: "" });
   const [chatState, setChatState] = useState({ loading: false, error: "" });
-  const [historyState, setHistoryState] = useState({ loading: false, error: "" });
+
+  const sourceIds = useMemo(() => new Set((activeChat?.sources ?? []).map((source) => source.paper_id)), [activeChat]);
 
   useEffect(() => {
+    void refreshChatThreads();
     void refreshDownloadedPdfs();
   }, []);
+
+  async function refreshChatThreads() {
+    setChatListState({ loading: true, error: "" });
+    try {
+      const response = await listChatThreads();
+      setChatThreads(response.chats ?? []);
+      setChatListState({ loading: false, error: "" });
+    } catch (error) {
+      setChatListState({ loading: false, error: error.message });
+    }
+  }
 
   async function refreshDownloadedPdfs() {
     setPdfListState({ loading: true, error: "" });
@@ -92,44 +101,68 @@ function App() {
     }
   }
 
-  async function handleSearch(event) {
-    event.preventDefault();
-    setSearchState({ loading: true, error: "" });
-
+  async function createNewChat() {
+    setSourceState({ loading: false, error: "", message: "" });
+    setChatState({ loading: false, error: "" });
     try {
-      const response = await searchPapers({ query, maxResults, sortBy });
-      setOnlinePapers((response.papers ?? []).map(normalizePaper));
-      setSearchState({ loading: false, error: "" });
+      const session = await createChatSession("New chat");
+      setActiveChat(session);
+      setQuestion("");
+      setIsSourceModalOpen(true);
+      await refreshChatThreads();
     } catch (error) {
-      setSearchState({ loading: false, error: error.message });
+      setChatListState({ loading: false, error: error.message });
     }
   }
 
-  async function openLocalPdf(pdf) {
-    const paper = paperFromDownloadedPdf(pdf);
-    setActivePaper(paper);
-    setChatMessages([]);
-    setPrepareState({
-      loading: false,
-      error: "",
-      message: "PDF is indexed by the system and ready for chat.",
-    });
-    await loadChatHistory(paper.paperId);
+  async function openChat(chatId) {
+    setSourceState({ loading: false, error: "", message: "" });
+    setChatState({ loading: false, error: "" });
+    try {
+      const session = await getChatSession(chatId);
+      setActiveChat(session);
+      setQuestion("");
+      setIsSourceModalOpen(false);
+    } catch (error) {
+      setChatListState({ loading: false, error: error.message });
+    }
   }
 
-  async function openOnlinePaper(paper) {
-    const normalized = paperFromOnlinePaper(paper);
-    setActivePaper(normalized);
-    setChatMessages([]);
+  async function ensureActiveChat() {
+    if (activeChat) return activeChat;
+    const session = await createChatSession("New chat");
+    setActiveChat(session);
+    await refreshChatThreads();
+    return session;
+  }
 
+  async function addLocalPdfToChat(pdf) {
+    setSourceState({ loading: true, error: "", message: `Indexing ${pdf.filename}...` });
+    try {
+      const chat = await ensureActiveChat();
+      const indexResponse = await indexDownloadedPdf(pdf.filename);
+      const session = await addChatSource(chat.chat_id, sourceFromPdf(pdf, indexResponse.paper_id));
+      setActiveChat(session);
+      setSourceState({
+        loading: false,
+        error: "",
+        message: `${pdf.filename} added to this chat.`,
+      });
+      await refreshChatThreads();
+    } catch (error) {
+      setSourceState({ loading: false, error: error.message, message: "" });
+    }
+  }
+
+  async function ingestOnlinePaper(paper) {
     if (!paper.pdfUrl) {
-      setPrepareState({ loading: false, error: "This paper does not have a PDF URL.", message: "" });
+      setSourceState({ loading: false, error: "This paper does not have a PDF URL.", message: "" });
       return;
     }
 
-    setPrepareState({ loading: true, error: "", message: "Downloading and indexing PDF..." });
-
+    setSourceState({ loading: true, error: "", message: "Downloading and indexing PDF..." });
     try {
+      const chat = await ensureActiveChat();
       const downloadResponse = await downloadPapers([paper.pdfUrl]);
       const downloadedPath = downloadResponse.files?.[0];
       if (!downloadedPath) {
@@ -139,441 +172,470 @@ function App() {
       await refreshDownloadedPdfs();
       const filename = downloadedPath.split("/").pop();
       const indexResponse = await indexDownloadedPdf(filename);
-      await loadChatHistory(indexResponse.paper_id);
-      setActivePaper({
-        ...normalized,
-        type: "online-indexed",
-        paperId: indexResponse.paper_id,
+      const session = await addChatSource(chat.chat_id, {
+        paper_id: indexResponse.paper_id,
+        title: paper.title,
         filename,
         path: downloadedPath,
       });
-      setPrepareState({
+      setActiveChat(session);
+      setSourceState({
         loading: false,
-        error: downloadResponse.errors?.[0]?.error ?? "",
-        message: `Ready for chat: ${indexResponse.chunks_indexed} chunks indexed.`,
+        error: "",
+        message: `${paper.title} added to this chat.`,
       });
+      await refreshChatThreads();
     } catch (error) {
-      setPrepareState({ loading: false, error: error.message, message: "" });
+      setSourceState({ loading: false, error: error.message, message: "" });
     }
   }
 
-  function closeChat() {
-    setActivePaper(null);
-    setChatMessages([]);
-    setQuestion("");
-    setPrepareState({ loading: false, error: "", message: "" });
-    setChatState({ loading: false, error: "" });
-    setHistoryState({ loading: false, error: "" });
+  async function removeSource(source) {
+    if (!activeChat) return;
+    setSourceState({ loading: true, error: "", message: "" });
+    try {
+      const session = await removeChatSource(activeChat.chat_id, source.paper_id);
+      setActiveChat(session);
+      setSourceState({ loading: false, error: "", message: "Source removed from this chat." });
+      await refreshChatThreads();
+    } catch (error) {
+      setSourceState({ loading: false, error: error.message, message: "" });
+    }
   }
 
-  async function loadChatHistory(paperId) {
-    setHistoryState({ loading: true, error: "" });
+  async function handleSearch(event) {
+    event.preventDefault();
+    setSearchState({ loading: true, error: "" });
     try {
-      const response = await getChatHistory(paperId);
-      setChatMessages(response.messages ?? []);
-      setHistoryState({ loading: false, error: "" });
+      const response = await searchPapers({ query, maxResults, sortBy });
+      setOnlinePapers((response.papers ?? []).map(normalizePaper));
+      setSearchState({ loading: false, error: "" });
     } catch (error) {
-      setHistoryState({ loading: false, error: error.message });
+      setSearchState({ loading: false, error: error.message });
     }
   }
 
   async function handleClearHistory() {
-    if (!activePaper) return;
-    setHistoryState({ loading: true, error: "" });
+    if (!activeChat) return;
+    setChatState({ loading: true, error: "" });
     try {
-      await clearChatHistory(activePaper.paperId);
-      setChatMessages([]);
-      setHistoryState({ loading: false, error: "" });
+      await clearChatHistory(activeChat.chat_id);
+      const session = await getChatSession(activeChat.chat_id);
+      setActiveChat(session);
+      setChatState({ loading: false, error: "" });
+      await refreshChatThreads();
     } catch (error) {
-      setHistoryState({ loading: false, error: error.message });
+      setChatState({ loading: false, error: error.message });
     }
   }
 
   async function handleAsk(event) {
     event.preventDefault();
     const trimmedQuestion = question.trim();
-    if (!trimmedQuestion || !activePaper || prepareState.loading) return;
+    if (!trimmedQuestion || !activeChat || sourceState.loading || activeChat.sources.length === 0) return;
 
-    setChatMessages((messages) => [...messages, { role: "user", content: trimmedQuestion }]);
+    const optimisticMessage = {
+      role: "user",
+      content: trimmedQuestion,
+      citations: [],
+      created_at: new Date().toISOString(),
+    };
+    setActiveChat((chat) => ({ ...chat, messages: [...chat.messages, optimisticMessage] }));
     setQuestion("");
     setChatState({ loading: true, error: "" });
 
     try {
-      const response = await chatWithPaper({
+      await chatWithPaper({
         question: trimmedQuestion,
-        paperIds: [activePaper.paperId],
+        chatId: activeChat.chat_id,
         topK: 5,
         scoreThreshold: 0.25,
       });
-      setChatMessages((messages) => [
-        ...messages,
-        {
-          role: "assistant",
-          content: response.answer,
-          citations: response.citations ?? [],
-        },
-      ]);
+      const session = await getChatSession(activeChat.chat_id);
+      setActiveChat(session);
       setChatState({ loading: false, error: "" });
+      await refreshChatThreads();
     } catch (error) {
       setChatState({ loading: false, error: error.message });
     }
   }
 
-  if (activePaper) {
-    return (
-      <PaperDetailWorkspace
-        activePaper={activePaper}
-        chatMessages={chatMessages}
-        chatState={chatState}
-        historyState={historyState}
-        onAsk={handleAsk}
-        onBack={closeChat}
-        onClearHistory={handleClearHistory}
-        prepareState={prepareState}
-        question={question}
-        setQuestion={setQuestion}
-      />
-    );
-  }
+  return (
+    <main className="research-shell">
+      <aside className="chat-rail" aria-label="Chats">
+        <div className="rail-header">
+          <div>
+            <h1>AI Research Assistant</h1>
+            <p>{chatThreads.length ? `${chatThreads.length} chats` : "No chats yet"}</p>
+          </div>
+          <button aria-label="New chat" onClick={createNewChat} type="button">
+            <Plus size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        {chatListState.error ? <div className="error-box compact-box">{chatListState.error}</div> : null}
+
+        <div className="rail-list">
+          {chatThreads.length === 0 && !chatListState.loading ? (
+            <div className="empty-state compact">
+              <MessageSquare size={22} aria-hidden="true" />
+              <span>Create a chat to start a research session.</span>
+            </div>
+          ) : null}
+          {chatThreads.map((thread) => (
+            <ChatThreadCard
+              active={activeChat?.chat_id === thread.chat_id}
+              key={thread.chat_id}
+              onClick={() => openChat(thread.chat_id)}
+              thread={thread}
+            />
+          ))}
+          {chatListState.loading ? <div className="rail-loading">Loading chats...</div> : null}
+        </div>
+      </aside>
+
+      <section className="workspace-panel" aria-label="Current chat">
+        {activeChat ? (
+          <ChatWorkspace
+            activeChat={activeChat}
+            chatState={chatState}
+            onAddSources={() => setIsSourceModalOpen(true)}
+            onAsk={handleAsk}
+            onClearHistory={handleClearHistory}
+            onOpenSource={setPaperOverlay}
+            onRemoveSource={removeSource}
+            question={question}
+            setQuestion={setQuestion}
+            sourceState={sourceState}
+          />
+        ) : (
+          <EmptyWorkspace onCreateChat={createNewChat} />
+        )}
+      </section>
+
+      {isSourceModalOpen ? (
+        <AddSourcesModal
+          downloadedPdfs={downloadedPdfs}
+          maxResults={maxResults}
+          onAddLocalPdf={addLocalPdfToChat}
+          onClose={() => setIsSourceModalOpen(false)}
+          onIngestOnlinePaper={ingestOnlinePaper}
+          onRefreshPdfs={refreshDownloadedPdfs}
+          onSearch={handleSearch}
+          onlinePapers={onlinePapers}
+          pdfListState={pdfListState}
+          query={query}
+          searchState={searchState}
+          setMaxResults={setMaxResults}
+          setQuery={setQuery}
+          setSortBy={setSortBy}
+          sortBy={sortBy}
+          sourceIds={sourceIds}
+          sourceState={sourceState}
+          sourceTab={sourceTab}
+          setSourceTab={setSourceTab}
+        />
+      ) : null}
+
+      {paperOverlay ? <PaperPreviewOverlay onClose={() => setPaperOverlay(null)} source={paperOverlay} /> : null}
+    </main>
+  );
+}
+
+function ChatWorkspace({
+  activeChat,
+  chatState,
+  onAddSources,
+  onAsk,
+  onClearHistory,
+  onOpenSource,
+  onRemoveSource,
+  question,
+  setQuestion,
+  sourceState,
+}) {
+  const canChat = activeChat.sources.length > 0 && !sourceState.loading;
 
   return (
-    <main className="home-shell">
-      <header className="home-header">
+    <>
+      <header className="workspace-header">
         <div>
-          <h1>AI Research Assistant</h1>
-          <p>Open an existing PDF or search arXiv, then chat with the selected paper.</p>
+          <h2>{activeChat.title}</h2>
+          <p>
+            {activeChat.sources.length
+              ? `${activeChat.sources.length} sources attached`
+              : "Add sources before asking questions."}
+          </p>
+        </div>
+        <div className="workspace-actions">
+          <button className="secondary-action" disabled={activeChat.messages.length === 0 || chatState.loading} onClick={onClearHistory} type="button">
+            Clear
+          </button>
+          <button className="primary-action" onClick={onAddSources} type="button">
+            <Plus size={17} aria-hidden="true" />
+            Add sources
+          </button>
         </div>
       </header>
 
-      <section className="home-grid">
-        <section className="online-panel" aria-label="Search online PDFs">
-          <div className="section-title-row prominent">
-            <div>
-              <h2>Search Online PDFs</h2>
-              <p>Find arXiv papers and open one to chat.</p>
-            </div>
-            <Search size={20} aria-hidden="true" />
-          </div>
-
-          <form className="search-form" onSubmit={handleSearch}>
-            <label className="field-label" htmlFor="paper-query">
-              Search query
-            </label>
-            <div className="search-input-row">
-              <Search size={18} aria-hidden="true" />
-              <input
-                id="paper-query"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Agentic RAG"
-                value={query}
-              />
-              <button disabled={searchState.loading || !query.trim()} type="submit">
-                {searchState.loading ? "Searching" : "Search"}
+      <section className="sources-strip" aria-label="Sources">
+        {activeChat.sources.length ? (
+          activeChat.sources.map((source) => (
+            <div className="source-chip" key={source.paper_id}>
+              <button onClick={() => onOpenSource(source)} type="button">
+                <FileText size={16} aria-hidden="true" />
+                <span>{source.title}</span>
+              </button>
+              <button aria-label={`Remove ${source.title}`} onClick={() => onRemoveSource(source)} type="button">
+                <Trash2 size={14} aria-hidden="true" />
               </button>
             </div>
-
-            <div className="search-controls">
-              <label>
-                Results
-                <input
-                  max="20"
-                  min="1"
-                  onChange={(event) => setMaxResults(Number(event.target.value))}
-                  type="number"
-                  value={maxResults}
-                />
-              </label>
-              <label>
-                Sort
-                <select onChange={(event) => setSortBy(event.target.value)} value={sortBy}>
-                  <option value="submittedDate">Submitted date</option>
-                  <option value="lastUpdatedDate">Last updated</option>
-                  <option value="relevance">Relevance</option>
-                </select>
-              </label>
-            </div>
-          </form>
-
-          {searchState.error ? <div className="error-box">{searchState.error}</div> : null}
-
-          <div className="online-result-list">
-            {onlinePapers.length === 0 && !searchState.loading ? (
-              <div className="empty-state compact">
-                <FileText size={22} aria-hidden="true" />
-                <span>Search results will appear here.</span>
-              </div>
-            ) : null}
-
-            {onlinePapers.map((paper) => (
-              <OnlinePaperCard key={paper.paper_id} onClick={() => openOnlinePaper(paper)} paper={paper} />
-            ))}
-          </div>
-        </section>
-
-        <section className="library-panel" aria-label="Available PDFs">
-          <div className="section-title-row prominent">
-            <div>
-              <h2>PDFs in System</h2>
-              <p>{downloadedPdfs.length ? `${downloadedPdfs.length} local files ready` : "No PDFs found yet"}</p>
-            </div>
-            <button aria-label="Refresh PDFs" disabled={pdfListState.loading} onClick={refreshDownloadedPdfs} type="button">
-              <RefreshCw size={16} aria-hidden="true" />
-            </button>
-          </div>
-
-          {pdfListState.error ? <div className="error-box">{pdfListState.error}</div> : null}
-
-          <div className="pdf-card-grid">
-            {downloadedPdfs.length === 0 && !pdfListState.loading ? (
-              <div className="empty-state">
-                <FileText size={26} aria-hidden="true" />
-                <span>No downloaded PDFs found.</span>
-              </div>
-            ) : null}
-
-            {downloadedPdfs.map((pdf) => (
-              <PdfCard key={pdf.path} onClick={() => openLocalPdf(pdf)} pdf={pdf} />
-            ))}
-
-            {pdfListState.loading ? (
-              <div className="pdf-card muted">
-                <span>Loading PDFs...</span>
-              </div>
-            ) : null}
-          </div>
-        </section>
-      </section>
-    </main>
-  );
-}
-
-function PaperDetailWorkspace({
-  activePaper,
-  chatMessages,
-  chatState,
-  historyState,
-  onAsk,
-  onBack,
-  onClearHistory,
-  prepareState,
-  question,
-  setQuestion,
-}) {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [viewerRevision, setViewerRevision] = useState(0);
-  const chatDisabled = prepareState.loading || Boolean(prepareState.error);
-  const localPdfUrl = activePaper.filename ? getPdfFileUrl(activePaper.filename) : null;
-  const pdfUrl = localPdfUrl ?? activePaper.pdfUrl ?? null;
-
-  function goToPage(pageNumber) {
-    const nextPage = Number(pageNumber);
-    if (!Number.isFinite(nextPage) || nextPage < 1) return;
-    setCurrentPage(Math.floor(nextPage));
-    setViewerRevision((revision) => revision + 1);
-  }
-
-  return (
-    <main className="paper-detail-workspace">
-      <section className="paper-reader-panel" aria-label="Paper detail">
-        <div className="paper-detail-header">
-          <button className="back-button" onClick={onBack} type="button">
-            <ArrowLeft size={17} aria-hidden="true" />
-            Back
+          ))
+        ) : (
+          <button className="source-empty-button" onClick={onAddSources} type="button">
+            <Library size={18} aria-hidden="true" />
+            Add local PDFs or web papers
           </button>
+        )}
+      </section>
 
-          <div className="paper-detail-title">
-            <div className="paper-kind">{activePaper.type === "local" ? "Local PDF" : "Online PDF"}</div>
-            <h1>{activePaper.title}</h1>
-            <p>{activePaper.subtitle}</p>
+      {sourceState.message ? <div className="success-box compact-box">{sourceState.message}</div> : null}
+      {sourceState.error ? <div className="error-box compact-box">{sourceState.error}</div> : null}
+
+      <div className="chat-log">
+        {activeChat.messages.length === 0 ? (
+          <div className="empty-state compact">
+            <Bot size={22} aria-hidden="true" />
+            <span>{canChat ? "Ask a grounded question across this chat's sources." : "Attach at least one source to begin."}</span>
           </div>
-
-          <div className="action-row compact-actions">
-            {activePaper.arxivUrl ? (
-              <a href={activePaper.arxivUrl} rel="noreferrer" target="_blank">
-                <ExternalLink size={16} aria-hidden="true" />
-                arXiv
-              </a>
-            ) : null}
-            {pdfUrl ? (
-              <a href={pdfUrl} rel="noreferrer" target="_blank">
-                <FileText size={16} aria-hidden="true" />
-                PDF
-              </a>
-            ) : null}
-            {activePaper.path ? (
-              <span className="index-badge neutral">
-                <ArrowDownToLine size={13} aria-hidden="true" />
-                Local file
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        {prepareState.message ? <div className="success-box detail-status">{prepareState.message}</div> : null}
-        {prepareState.error ? <div className="error-box detail-status">{prepareState.error}</div> : null}
-
-        {activePaper.abstract ? (
-          <details className="abstract-drawer">
-            <summary>Abstract</summary>
-            <p>{activePaper.abstract}</p>
-          </details>
         ) : null}
-
-        <PdfViewer
-          currentPage={currentPage}
-          onPageChange={goToPage}
-          pdfUrl={pdfUrl}
-          viewerRevision={viewerRevision}
-        />
-      </section>
-
-      <aside className="chat-sidebar-panel" aria-label="Chat with selected PDF">
-        <div className="panel-header">
-          <div>
-            <h2>Chat with paper</h2>
-            <p>{activePaper.title}</p>
+        {activeChat.messages.map((message, index) => (
+          <ChatMessage key={`${message.role}-${message.created_at}-${index}`} message={message} />
+        ))}
+        {chatState.loading ? (
+          <div className="message assistant">
+            <Bot size={18} aria-hidden="true" />
+            <div className="message-bubble">Thinking...</div>
           </div>
-          <div className="chat-header-actions">
-            <button
-              disabled={historyState.loading || chatMessages.length === 0}
-              onClick={onClearHistory}
-              type="button"
-            >
-              Clear
-            </button>
-            <MessageSquare size={20} aria-hidden="true" />
-          </div>
-        </div>
-
-        <div className="chat-log">
-          {chatMessages.length === 0 ? (
-            <div className="empty-state compact">
-              <Bot size={22} aria-hidden="true" />
-              <span>
-                {historyState.loading
-                  ? "Loading conversation history."
-                  : chatDisabled
-                    ? "Waiting for PDF indexing."
-                    : "Ask a grounded question about this paper."}
-              </span>
-            </div>
-          ) : null}
-
-          {chatMessages.map((message, index) => (
-            <ChatMessage
-              key={`${message.role}-${index}`}
-              message={message}
-              onCitationClick={goToPage}
-            />
-          ))}
-
-          {chatState.loading ? (
-            <div className="message assistant">
-              <Bot size={18} aria-hidden="true" />
-              <div className="message-bubble">Thinking...</div>
-            </div>
-          ) : null}
-        </div>
-
-        {chatState.error ? <div className="error-box compact-error">{chatState.error}</div> : null}
-        {historyState.error ? <div className="error-box compact-error">{historyState.error}</div> : null}
-
-        <form className="chat-form" onSubmit={onAsk}>
-          <input
-            disabled={chatDisabled || chatState.loading}
-            onChange={(event) => setQuestion(event.target.value)}
-            placeholder={chatDisabled ? "Indexing must finish before chat" : "Ask about method, results, limitations..."}
-            value={question}
-          />
-          <button disabled={chatDisabled || !question.trim() || chatState.loading} type="submit">
-            <Send size={17} aria-hidden="true" />
-            <span>Ask</span>
-          </button>
-        </form>
-      </aside>
-    </main>
-  );
-}
-
-function PdfViewer({ currentPage, onPageChange, pdfUrl, viewerRevision }) {
-  const viewerSrc = pdfUrl ? `${pdfUrl}#page=${currentPage}&view=FitH` : "";
-
-  return (
-    <section className="pdf-viewer-panel" aria-label="PDF viewer">
-      <div className="pdf-viewer-toolbar">
-        <div className="page-stepper">
-          <button
-            aria-label="Previous page"
-            disabled={currentPage <= 1}
-            onClick={() => onPageChange(currentPage - 1)}
-            type="button"
-          >
-            <ChevronLeft size={16} aria-hidden="true" />
-          </button>
-          <label>
-            Page
-            <input
-              min="1"
-              onChange={(event) => onPageChange(event.target.value)}
-              type="number"
-              value={currentPage}
-            />
-          </label>
-          <button
-            aria-label="Next page"
-            onClick={() => onPageChange(currentPage + 1)}
-            type="button"
-          >
-            <ChevronRight size={16} aria-hidden="true" />
-          </button>
-        </div>
+        ) : null}
       </div>
 
-      {viewerSrc ? (
-        <iframe
-          key={`${viewerSrc}-${viewerRevision}`}
-          className="pdf-frame"
-          src={viewerSrc}
-          title="Paper PDF"
+      {chatState.error ? <div className="error-box compact-error">{chatState.error}</div> : null}
+
+      <form className="chat-form" onSubmit={onAsk}>
+        <input
+          disabled={!canChat || chatState.loading}
+          onChange={(event) => setQuestion(event.target.value)}
+          placeholder={canChat ? "Ask across the selected sources..." : "Add sources before chatting"}
+          value={question}
         />
-      ) : (
-        <div className="pdf-placeholder">
-          <FileText size={28} aria-hidden="true" />
-          <span>PDF unavailable.</span>
-        </div>
-      )}
-    </section>
+        <button disabled={!canChat || !question.trim() || chatState.loading} type="submit">
+          <Send size={17} aria-hidden="true" />
+          <span>Ask</span>
+        </button>
+      </form>
+    </>
   );
 }
 
-function PdfCard({ onClick, pdf }) {
+function AddSourcesModal({
+  downloadedPdfs,
+  maxResults,
+  onAddLocalPdf,
+  onClose,
+  onIngestOnlinePaper,
+  onRefreshPdfs,
+  onSearch,
+  onlinePapers,
+  pdfListState,
+  query,
+  searchState,
+  setMaxResults,
+  setQuery,
+  setSortBy,
+  sortBy,
+  sourceIds,
+  sourceState,
+  sourceTab,
+  setSourceTab,
+}) {
   return (
-    <button className="pdf-card" onClick={onClick} type="button">
-      <FileText size={22} aria-hidden="true" />
-      <span className="pdf-card-title">{pdf.filename}</span>
-      <span className="pdf-card-meta">
-        {formatBytes(pdf.size_bytes)} · {formatDateTime(pdf.modified_at)}
+    <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Add sources">
+      <section className="sources-modal">
+        <header className="modal-header">
+          <div>
+            <h2>Add sources</h2>
+            <p>Attach local PDFs or ingest web papers into the current chat.</p>
+          </div>
+          <button aria-label="Close" onClick={onClose} type="button">
+            <X size={18} aria-hidden="true" />
+          </button>
+        </header>
+
+        <div className="tabs" role="tablist">
+          <button className={sourceTab === "local" ? "active" : ""} onClick={() => setSourceTab("local")} type="button">
+            Local PDFs
+          </button>
+          <button className={sourceTab === "web" ? "active" : ""} onClick={() => setSourceTab("web")} type="button">
+            Search web
+          </button>
+        </div>
+
+        {sourceState.message ? <div className="success-box compact-box">{sourceState.message}</div> : null}
+        {sourceState.error ? <div className="error-box compact-box">{sourceState.error}</div> : null}
+
+        {sourceTab === "local" ? (
+          <section className="modal-body">
+            <div className="section-title-row prominent">
+              <div>
+                <h2>Your library</h2>
+                <p>{downloadedPdfs.length ? `${downloadedPdfs.length} local PDFs available` : "No local PDFs found"}</p>
+              </div>
+              <button aria-label="Refresh PDFs" disabled={pdfListState.loading} onClick={onRefreshPdfs} type="button">
+                <RefreshCw size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="source-picker-list">
+              {downloadedPdfs.map((pdf) => {
+                const paperId = paperIdFromFilename(pdf.filename);
+                const isAdded = sourceIds.has(paperId);
+                return (
+                  <button className="source-picker-item" disabled={isAdded || sourceState.loading} key={pdf.path} onClick={() => onAddLocalPdf(pdf)} type="button">
+                    <FileText size={20} aria-hidden="true" />
+                    <span className="source-picker-title">{pdf.filename}</span>
+                    <span className="source-picker-meta">
+                      {formatBytes(pdf.size_bytes)} · {formatDateTime(pdf.modified_at)}
+                    </span>
+                    <span className="source-picker-action">{isAdded ? "Added" : "Add"}</span>
+                  </button>
+                );
+              })}
+              {!downloadedPdfs.length && !pdfListState.loading ? <div className="empty-state">No downloaded PDFs found.</div> : null}
+            </div>
+          </section>
+        ) : (
+          <section className="modal-body">
+            <form className="search-form compact-search" onSubmit={onSearch}>
+              <div className="search-input-row">
+                <Search size={18} aria-hidden="true" />
+                <input onChange={(event) => setQuery(event.target.value)} placeholder="Agentic RAG" value={query} />
+                <button disabled={searchState.loading || !query.trim()} type="submit">
+                  Search
+                </button>
+              </div>
+              <div className="search-controls">
+                <label>
+                  Results
+                  <input max="20" min="1" onChange={(event) => setMaxResults(Number(event.target.value))} type="number" value={maxResults} />
+                </label>
+                <label>
+                  Sort
+                  <select onChange={(event) => setSortBy(event.target.value)} value={sortBy}>
+                    <option value="submittedDate">Submitted date</option>
+                    <option value="lastUpdatedDate">Last updated</option>
+                    <option value="relevance">Relevance</option>
+                  </select>
+                </label>
+              </div>
+            </form>
+            {searchState.error ? <div className="error-box">{searchState.error}</div> : null}
+            <div className="online-result-list modal-results">
+              {onlinePapers.length === 0 && !searchState.loading ? (
+                <div className="empty-state compact">
+                  <Search size={22} aria-hidden="true" />
+                  <span>Search results will appear here.</span>
+                </div>
+              ) : null}
+              {onlinePapers.map((paper) => (
+                <OnlinePaperCard disabled={sourceState.loading} key={paper.paper_id} onClick={() => onIngestOnlinePaper(paper)} paper={paper} />
+              ))}
+            </div>
+          </section>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function EmptyWorkspace({ onCreateChat }) {
+  return (
+    <div className="workspace-empty">
+      <MessageSquare size={34} aria-hidden="true" />
+      <h2>Start a research chat</h2>
+      <p>Create a chat, attach sources, then ask questions grounded in those papers.</p>
+      <button className="primary-action" onClick={onCreateChat} type="button">
+        <Plus size={17} aria-hidden="true" />
+        New chat
+      </button>
+    </div>
+  );
+}
+
+function PaperPreviewOverlay({ onClose, source }) {
+  const pdfUrl = source.filename ? getPdfFileUrl(source.filename) : null;
+
+  return (
+    <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Paper preview">
+      <section className="paper-overlay">
+        <div className="paper-detail-header">
+          <button className="secondary-action" onClick={onClose} type="button">
+            <X size={17} aria-hidden="true" />
+            Close
+          </button>
+          <div className="paper-detail-title">
+            <div className="paper-kind">Source</div>
+            <h1>{source.title}</h1>
+            <p>{source.path ?? source.paper_id}</p>
+          </div>
+          {source.path ? (
+            <span className="index-badge neutral">
+              <ArrowDownToLine size={13} aria-hidden="true" />
+              Local file
+            </span>
+          ) : null}
+        </div>
+
+        {pdfUrl ? (
+          <iframe className="pdf-frame" src={`${pdfUrl}#view=FitH`} title="Paper PDF" />
+        ) : (
+          <div className="pdf-placeholder">
+            <FileText size={28} aria-hidden="true" />
+            <span>PDF preview unavailable.</span>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ChatThreadCard({ active, onClick, thread }) {
+  return (
+    <button className={`chat-thread-card ${active ? "active" : ""}`} onClick={onClick} type="button">
+      <MessageSquare size={20} aria-hidden="true" />
+      <span className="chat-thread-title">{thread.title}</span>
+      <span className="chat-thread-last">{thread.last_message}</span>
+      <span className="chat-thread-meta">
+        {thread.source_count} sources · {thread.message_count} messages · {formatDateTime(thread.updated_at)}
       </span>
-      <span className="pdf-card-path">{pdf.path}</span>
     </button>
   );
 }
 
-function OnlinePaperCard({ onClick, paper }) {
+function OnlinePaperCard({ disabled, onClick, paper }) {
   return (
-    <button className="online-paper-card" onClick={onClick} type="button">
+    <button className="online-paper-card" disabled={disabled} onClick={onClick} type="button">
       <span className="paper-title">{paper.title}</span>
       <span className="paper-meta">
         <CalendarDays size={14} aria-hidden="true" />
         {paper.published}
       </span>
       <span className="author-line">{paper.authors?.join(", ") || "Unknown authors"}</span>
-      <span className="online-paper-action">Download, index, and chat</span>
+      <span className="online-paper-action">Ingest & add</span>
     </button>
   );
 }
 
-function ChatMessage({ message, onCitationClick }) {
+function ChatMessage({ message }) {
   const isUser = message.role === "user";
   return (
     <div className={`message ${isUser ? "user" : "assistant"}`}>
@@ -583,15 +645,10 @@ function ChatMessage({ message, onCitationClick }) {
         {message.citations?.length ? (
           <div className="citation-list">
             {message.citations.map((citation) => (
-              <button
-                disabled={!citation.page_number}
-                key={citation.chunk_id ?? `${citation.paper_id}-${citation.page_number}`}
-                onClick={() => onCitationClick(citation.page_number)}
-                type="button"
-              >
+              <span className="citation-pill" key={citation.chunk_id ?? `${citation.paper_id}-${citation.page_number}`}>
                 {citation.title || citation.paper_id}
                 {citation.page_number ? `, p. ${citation.page_number}` : ""}
-              </button>
+              </span>
             ))}
           </div>
         ) : null}

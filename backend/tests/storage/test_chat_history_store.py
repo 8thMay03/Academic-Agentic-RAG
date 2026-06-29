@@ -1,4 +1,5 @@
 from app.models.citation import Citation
+from app.models.chat import ChatSource
 from app.storage.chat_history_store import ChatHistoryStore
 
 
@@ -43,3 +44,36 @@ async def test_chat_history_store_clears_paper_history(tmp_path) -> None:
     await store.clear("paper-1")
 
     assert await store.get_messages("paper-1") == []
+
+
+async def test_chat_history_store_lists_threads(tmp_path) -> None:
+    store = ChatHistoryStore(base_dir=tmp_path)
+    await store.append_exchange("paper-1", "What is the method?", "It uses planning.", [])
+    await store.append_exchange("paper-2", "What is the limitation?", "Not specified.", [])
+
+    threads = await store.list_threads()
+
+    assert {thread.chat_id for thread in threads} == {"paper-1", "paper-2"}
+    paper_1_thread = next(thread for thread in threads if thread.chat_id == "paper-1")
+    assert paper_1_thread.title == "What is the method?"
+    assert paper_1_thread.last_message == "It uses planning."
+    assert paper_1_thread.message_count == 2
+
+
+async def test_chat_history_store_adds_sources_to_session(tmp_path) -> None:
+    store = ChatHistoryStore(base_dir=tmp_path)
+    session = await store.create_session("Literature review")
+
+    updated_session = await store.add_source(
+        session.chat_id,
+        ChatSource(
+            paper_id="paper-1",
+            title="Agentic RAG.pdf",
+            filename="Agentic RAG.pdf",
+            path="data/pdfs/Agentic RAG.pdf",
+        ),
+    )
+
+    assert updated_session.sources[0].paper_id == "paper-1"
+    assert updated_session.sources[0].filename == "Agentic RAG.pdf"
+    assert (await store.get_session(session.chat_id)).sources[0].title == "Agentic RAG.pdf"

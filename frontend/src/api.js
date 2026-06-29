@@ -46,11 +46,12 @@ export async function indexDownloadedPdf(filename) {
   });
 }
 
-export async function chatWithPaper({ question, paperIds, topK, scoreThreshold }) {
+export async function chatWithPaper({ question, chatId, paperIds, topK, scoreThreshold }) {
   return request("/chat", {
     method: "POST",
     body: JSON.stringify({
       question,
+      chat_id: chatId,
       paper_ids: paperIds,
       top_k: topK,
       score_threshold: scoreThreshold,
@@ -60,6 +61,34 @@ export async function chatWithPaper({ question, paperIds, topK, scoreThreshold }
 
 export async function getChatHistory(paperId) {
   return request(`/chat/history/${encodeURIComponent(paperId)}`);
+}
+
+export async function listChatThreads() {
+  return request("/chat/history");
+}
+
+export async function createChatSession(title) {
+  return request("/chat/sessions", {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export async function getChatSession(chatId) {
+  return request(`/chat/sessions/${encodeURIComponent(chatId)}`);
+}
+
+export async function addChatSource(chatId, source) {
+  return request(`/chat/sessions/${encodeURIComponent(chatId)}/sources`, {
+    method: "POST",
+    body: JSON.stringify(source),
+  });
+}
+
+export async function removeChatSource(chatId, paperId) {
+  return request(`/chat/sessions/${encodeURIComponent(chatId)}/sources/${encodeURIComponent(paperId)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function clearChatHistory(paperId) {
