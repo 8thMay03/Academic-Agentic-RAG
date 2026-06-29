@@ -78,6 +78,12 @@ export async function getChatSession(chatId) {
   return request(`/chat/sessions/${encodeURIComponent(chatId)}`);
 }
 
+export async function deleteChatSession(chatId) {
+  return request(`/chat/sessions/${encodeURIComponent(chatId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function addChatSource(chatId, source) {
   return request(`/chat/sessions/${encodeURIComponent(chatId)}/sources`, {
     method: "POST",

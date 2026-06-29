@@ -87,6 +87,13 @@ class ChatHistoryStore:
         self._write_session(session)
         return session
 
+    async def delete_session(self, chat_id: str) -> bool:
+        path = self._history_path(chat_id)
+        if not path.is_file():
+            return False
+        path.unlink()
+        return True
+
     async def append_exchange(
         self,
         paper_id: str,

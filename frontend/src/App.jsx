@@ -19,6 +19,7 @@ import {
   chatWithPaper,
   clearChatHistory,
   createChatSession,
+  deleteChatSession,
   downloadPapers,
   getChatSession,
   getPdfFileUrl,
@@ -65,6 +66,7 @@ function App() {
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
   const [sourceTab, setSourceTab] = useState("local");
   const [paperOverlay, setPaperOverlay] = useState(null);
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
 
   const [chatListState, setChatListState] = useState({ loading: false, error: "" });
   const [pdfListState, setPdfListState] = useState({ loading: false, error: "" });
@@ -123,6 +125,23 @@ function App() {
       setActiveChat(session);
       setQuestion("");
       setIsSourceModalOpen(false);
+    } catch (error) {
+      setChatListState({ loading: false, error: error.message });
+    }
+  }
+
+  async function deleteChat(chatId) {
+    setChatListState({ loading: true, error: "" });
+    try {
+      await deleteChatSession(chatId);
+      setDeleteCandidate(null);
+      if (activeChat?.chat_id === chatId) {
+        setActiveChat(null);
+        setQuestion("");
+        setIsSourceModalOpen(false);
+        setPaperOverlay(null);
+      }
+      await refreshChatThreads();
     } catch (error) {
       setChatListState({ loading: false, error: error.message });
     }
@@ -286,6 +305,7 @@ function App() {
             <ChatThreadCard
               active={activeChat?.chat_id === thread.chat_id}
               key={thread.chat_id}
+              onDelete={() => setDeleteCandidate(thread)}
               onClick={() => openChat(thread.chat_id)}
               thread={thread}
             />
@@ -338,6 +358,15 @@ function App() {
       ) : null}
 
       {paperOverlay ? <PaperPreviewOverlay onClose={() => setPaperOverlay(null)} source={paperOverlay} /> : null}
+
+      {deleteCandidate ? (
+        <ConfirmDeleteChatDialog
+          chat={deleteCandidate}
+          deleting={chatListState.loading}
+          onCancel={() => setDeleteCandidate(null)}
+          onConfirm={() => deleteChat(deleteCandidate.chat_id)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -608,16 +637,50 @@ function PaperPreviewOverlay({ onClose, source }) {
   );
 }
 
-function ChatThreadCard({ active, onClick, thread }) {
+function ConfirmDeleteChatDialog({ chat, deleting, onCancel, onConfirm }) {
   return (
-    <button className={`chat-thread-card ${active ? "active" : ""}`} onClick={onClick} type="button">
-      <MessageSquare size={20} aria-hidden="true" />
-      <span className="chat-thread-title">{thread.title}</span>
-      <span className="chat-thread-last">{thread.last_message}</span>
-      <span className="chat-thread-meta">
-        {thread.source_count} sources · {thread.message_count} messages · {formatDateTime(thread.updated_at)}
-      </span>
-    </button>
+    <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Delete chat confirmation">
+      <section className="confirm-dialog">
+        <div className="confirm-icon">
+          <Trash2 size={22} aria-hidden="true" />
+        </div>
+        <div>
+          <h2>Delete this chat?</h2>
+          <p>
+            This will remove the conversation and its attached source list. Local PDF files and indexed vectors will stay
+            in the system.
+          </p>
+          <div className="confirm-chat-title">{chat.title}</div>
+        </div>
+        <div className="confirm-actions">
+          <button className="secondary-action" disabled={deleting} onClick={onCancel} type="button">
+            Cancel
+          </button>
+          <button className="danger-action" disabled={deleting} onClick={onConfirm} type="button">
+            <Trash2 size={16} aria-hidden="true" />
+            {deleting ? "Deleting" : "Delete"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ChatThreadCard({ active, onClick, onDelete, thread }) {
+  return (
+    <div className={`chat-thread-card ${active ? "active" : ""}`}>
+      <button className="chat-thread-open" onClick={onClick} type="button">
+        <MessageSquare size={20} aria-hidden="true" />
+        <span className="chat-thread-title">{thread.title}</span>
+        <span className="chat-thread-last">{thread.last_message}</span>
+        <span className="chat-thread-meta">
+          {thread.source_count} sources · {thread.message_count} messages · {formatDateTime(thread.updated_at)}
+        </span>
+      </button>
+      <button aria-label={`Delete ${thread.title}`} className="chat-thread-delete" onClick={onDelete} type="button">
+        <Trash2 size={15} aria-hidden="true" />
+      </button>
+    </div>
   );
 }
 

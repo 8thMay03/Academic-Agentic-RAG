@@ -98,6 +98,10 @@ class FakeChatHistoryStore:
         self.session.sources = [source for source in self.session.sources if source.paper_id != paper_id]
         return self.session
 
+    async def delete_session(self, chat_id):
+        assert chat_id == "chat-1"
+        return True
+
 
 def test_chat_with_papers_returns_answer_and_citations() -> None:
     history_store = FakeChatHistoryStore()
@@ -190,3 +194,14 @@ def test_clear_chat_history_deletes_messages() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"paper_id": "paper-1", "messages": []}
+
+
+def test_delete_chat_session_removes_chat() -> None:
+    app.dependency_overrides[get_chat_history_store] = lambda: FakeChatHistoryStore()
+    client = TestClient(app)
+
+    response = client.delete("/api/v1/chat/sessions/chat-1")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 204

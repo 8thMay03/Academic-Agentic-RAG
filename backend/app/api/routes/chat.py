@@ -72,6 +72,16 @@ async def get_chat_session(
     return session
 
 
+@router.delete("/sessions/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_chat_session(
+    chat_id: str,
+    history_store: ChatHistoryStore = Depends(get_chat_history_store),
+) -> None:
+    deleted = await history_store.delete_session(chat_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {chat_id}")
+
+
 @router.post("/sessions/{chat_id}/sources", response_model=ChatSession)
 async def add_chat_source(
     chat_id: str,

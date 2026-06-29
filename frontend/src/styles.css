@@ -160,6 +160,7 @@ button:disabled {
 
 .primary-action,
 .secondary-action,
+.danger-action,
 .chat-form button,
 .search-input-row button,
 .tabs button,
@@ -193,6 +194,17 @@ button:disabled {
   border-color: #2f6f78;
   background: #e8f2f2;
   color: #173d43;
+}
+
+.danger-action {
+  border-color: #9d2b2b;
+  background: #9d2b2b;
+  color: #ffffff;
+}
+
+.danger-action:hover {
+  border-color: #7f1d1d;
+  background: #7f1d1d;
 }
 
 .sources-strip {
@@ -366,21 +378,36 @@ button:disabled {
   padding: 12px;
 }
 
-.chat-thread-card,
+.chat-thread-open,
 .online-paper-card,
 .source-picker-item {
   display: grid;
   gap: 7px;
   width: 100%;
-  border: 1px solid #d4dce5;
-  background: #ffffff;
+  border: 0;
+  background: transparent;
   color: #17202a;
-  padding: 12px;
   text-align: left;
 }
 
 .chat-thread-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: stretch;
+  border: 1px solid #d4dce5;
+  background: #ffffff;
+}
+
+.chat-thread-open {
   grid-template-columns: 26px minmax(0, 1fr);
+  padding: 12px;
+}
+
+.online-paper-card,
+.source-picker-item {
+  border: 1px solid #d4dce5;
+  background: #ffffff;
+  padding: 12px;
 }
 
 .chat-thread-card:hover,
@@ -391,9 +418,26 @@ button:disabled {
   background: #f1f8f8;
 }
 
-.chat-thread-card svg {
+.chat-thread-open svg {
   grid-row: 1 / span 3;
   color: #2f6f78;
+}
+
+.chat-thread-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 100%;
+  border: 0;
+  border-left: 1px solid #d4dce5;
+  background: transparent;
+  color: #667487;
+}
+
+.chat-thread-delete:hover {
+  background: #fff5f5;
+  color: #9d2b2b;
 }
 
 .chat-thread-title,
@@ -440,7 +484,8 @@ button:disabled {
 }
 
 .sources-modal,
-.paper-overlay {
+.paper-overlay,
+.confirm-dialog {
   display: flex;
   width: min(980px, 100%);
   max-height: calc(100vh - 44px);
@@ -457,6 +502,59 @@ button:disabled {
 .paper-overlay {
   width: min(1120px, 100%);
   min-height: min(760px, calc(100vh - 44px));
+}
+
+.confirm-dialog {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 14px;
+  width: min(460px, 100%);
+  padding: 18px;
+}
+
+.confirm-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #e0a8a8;
+  background: #fff5f5;
+  color: #9d2b2b;
+}
+
+.confirm-dialog h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.18rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.confirm-dialog p {
+  margin: 8px 0 0;
+  color: #405063;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.confirm-chat-title {
+  margin-top: 12px;
+  border: 1px solid #d4dce5;
+  background: #f4f7fa;
+  color: #17202a;
+  overflow-wrap: anywhere;
+  padding: 9px 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.confirm-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .modal-header h2 {
@@ -764,9 +862,18 @@ button:disabled {
   }
 
   .sources-modal,
-  .paper-overlay {
+  .paper-overlay,
+  .confirm-dialog {
     max-height: calc(100vh - 20px);
+  }
+
+  .sources-modal,
+  .paper-overlay {
     min-height: calc(100vh - 20px);
+  }
+
+  .confirm-dialog {
+    grid-template-columns: 1fr;
   }
 }
 

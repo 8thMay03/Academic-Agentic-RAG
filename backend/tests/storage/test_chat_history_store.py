@@ -77,3 +77,14 @@ async def test_chat_history_store_adds_sources_to_session(tmp_path) -> None:
     assert updated_session.sources[0].paper_id == "paper-1"
     assert updated_session.sources[0].filename == "Agentic RAG.pdf"
     assert (await store.get_session(session.chat_id)).sources[0].title == "Agentic RAG.pdf"
+
+
+async def test_chat_history_store_deletes_session(tmp_path) -> None:
+    store = ChatHistoryStore(base_dir=tmp_path)
+    session = await store.create_session("Disposable chat")
+
+    deleted = await store.delete_session(session.chat_id)
+
+    assert deleted is True
+    assert await store.get_session(session.chat_id) is None
+    assert await store.delete_session(session.chat_id) is False
