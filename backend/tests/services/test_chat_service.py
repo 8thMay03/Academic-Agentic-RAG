@@ -67,6 +67,11 @@ class FakeLLMService:
         self.prompts.append(prompt)
         return self.answer
 
+    async def stream_complete(self, prompt: str):
+        self.prompts.append(prompt)
+        for token in self.answer.split(" "):
+            yield f"{token} "
+
 
 RETRIEVED_CHUNK = {
     "id": "paper-1:p3:c0",
@@ -131,6 +136,20 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert citations[0].chunk_id == "paper-1:p3:c0"
     assert "If the context does not contain enough information" in llm.prompts[0]
     assert "I don't know" in llm.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_streams_answer_tokens_with_citations() -> None:
+    retriever = FakeRetrieverService([RETRIEVED_CHUNK])
+    llm = FakeLLMService("It uses planning")
+    service = ChatService(retriever, llm)
+
+    token_stream, citations = await service.stream_answer("What is the method?")
+    tokens = [token async for token in token_stream]
+
+    assert tokens == ["It ", "uses ", "planning "]
+    assert citations[0].paper_id == "paper-1"
+    assert "Retrieved context" in llm.prompts[0]
 
 
 @pytest.mark.asyncio

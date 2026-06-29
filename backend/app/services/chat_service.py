@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+
 from app.models.citation import Citation
 from app.services.llm_service import LLMService
 from app.services.retriever_service import RetrieverService
@@ -22,6 +24,35 @@ class ChatService:
         top_k: int = 5,
         score_threshold: float = 0.65,
     ) -> tuple[str, list[Citation]]:
+        prompt, citations = await self._prepare_answer(question, paper_ids, top_k, score_threshold)
+        if not prompt:
+            return UNKNOWN_ANSWER, []
+
+        answer = (await self._llm_service.complete(prompt)).strip()
+        if not answer:
+            return UNKNOWN_ANSWER, []
+
+        return answer, citations
+
+    async def stream_answer(
+        self,
+        question: str,
+        paper_ids: list[str] | None = None,
+        top_k: int = 5,
+        score_threshold: float = 0.65,
+    ) -> tuple[AsyncIterator[str], list[Citation]]:
+        prompt, citations = await self._prepare_answer(question, paper_ids, top_k, score_threshold)
+        if not prompt:
+            return self._single_token_stream(UNKNOWN_ANSWER), []
+        return self._llm_service.stream_complete(prompt), citations
+
+    async def _prepare_answer(
+        self,
+        question: str,
+        paper_ids: list[str] | None,
+        top_k: int,
+        score_threshold: float | None,
+    ) -> tuple[str | None, list[Citation]]:
         retrieved_chunks = await self._retriever_service.retrieve(
             question,
             top_k=top_k,
@@ -40,14 +71,13 @@ class ChatService:
             filtered_chunks = self._filter_by_paper_ids(retrieved_chunks, paper_ids)
 
         if not filtered_chunks:
-            return UNKNOWN_ANSWER, []
+            return None, []
 
-        prompt = self._build_prompt(question, filtered_chunks)
-        answer = (await self._llm_service.complete(prompt)).strip()
-        if not answer:
-            return UNKNOWN_ANSWER, []
+        return self._build_prompt(question, filtered_chunks), self._citations(filtered_chunks)
 
-        return answer, self._citations(filtered_chunks)
+    @staticmethod
+    async def _single_token_stream(token: str) -> AsyncIterator[str]:
+        yield token
 
     @staticmethod
     def _filter_by_paper_ids(chunks: list[dict], paper_ids: list[str] | None) -> list[dict]:
