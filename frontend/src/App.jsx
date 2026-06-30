@@ -287,6 +287,32 @@ function App() {
     }
   }
 
+  function openCitation(citation) {
+    const source = activeChat?.sources.find(
+      (candidate) =>
+        candidate.paper_id === citation.paper_id ||
+        candidate.title === citation.title ||
+        candidate.filename === citation.title,
+    );
+    const filename = source?.filename ?? (citation.title?.toLowerCase().endsWith(".pdf") ? citation.title : null);
+
+    if (!filename) {
+      setChatState({ loading: false, error: "Cannot open this citation because the PDF source is not available." });
+      return;
+    }
+
+    setChatState({ loading: false, error: "" });
+    setPaperOverlay({
+      ...(source ?? {
+        paper_id: citation.paper_id,
+        title: citation.title || citation.paper_id,
+      }),
+      filename,
+      citation,
+      pageNumber: citation.page_number ?? citation.page,
+    });
+  }
+
   async function handleResearch(event) {
     event.preventDefault();
     const trimmedQuery = researchQuery.trim();
@@ -472,6 +498,7 @@ function App() {
             onAddSources={() => setIsSourceModalOpen(true)}
             onAsk={handleAsk}
             onClearHistory={handleClearHistory}
+            onOpenCitation={openCitation}
             onOpenSource={setPaperOverlay}
             onRename={() => openRenameDialog(activeChat)}
             onRemoveSource={removeSource}
@@ -818,6 +845,7 @@ function ChatWorkspace({
   onAddSources,
   onAsk,
   onClearHistory,
+  onOpenCitation,
   onOpenSource,
   onRename,
   onRemoveSource,
@@ -899,7 +927,7 @@ function ChatWorkspace({
           </div>
         ) : null}
         {activeChat.messages.map((message, index) => (
-          <ChatMessage key={`${message.role}-${message.created_at}-${index}`} message={message} />
+          <ChatMessage key={`${message.role}-${message.created_at}-${index}`} message={message} onOpenCitation={onOpenCitation} />
         ))}
       </div>
 
@@ -1027,6 +1055,8 @@ function EmptyWorkspace({ onCreateChat }) {
 
 function PaperPreviewOverlay({ onClose, source }) {
   const pdfUrl = source.filename ? getPdfFileUrl(source.filename) : null;
+  const pageNumber = source.pageNumber ?? source.citation?.page_number ?? source.citation?.page;
+  const pdfFragment = pageNumber ? `#page=${pageNumber}&view=FitH` : "#view=FitH";
 
   return (
     <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Paper preview">
@@ -1039,7 +1069,10 @@ function PaperPreviewOverlay({ onClose, source }) {
           <div className="paper-detail-title">
             <div className="paper-kind">Source</div>
             <h1>{source.title}</h1>
-            <p>{source.path ?? source.paper_id}</p>
+            <p>
+              {source.path ?? source.paper_id}
+              {pageNumber ? ` · page ${pageNumber}` : ""}
+            </p>
           </div>
           {source.path ? (
             <span className="index-badge neutral">
@@ -1049,8 +1082,15 @@ function PaperPreviewOverlay({ onClose, source }) {
           ) : null}
         </div>
 
+        {source.citation?.text ? (
+          <div className="citation-preview">
+            <strong>Referenced passage{pageNumber ? ` on page ${pageNumber}` : ""}</strong>
+            <p>{source.citation.text}</p>
+          </div>
+        ) : null}
+
         {pdfUrl ? (
-          <iframe className="pdf-frame" src={`${pdfUrl}#view=FitH`} title="Paper PDF" />
+          <iframe className="pdf-frame" src={`${pdfUrl}${pdfFragment}`} title="Paper PDF" />
         ) : (
           <div className="pdf-placeholder">
             <FileText size={28} aria-hidden="true" />
@@ -1146,7 +1186,7 @@ function ChatThreadCard({ active, onClick, onDelete, thread }) {
   );
 }
 
-function ChatMessage({ message }) {
+function ChatMessage({ message, onOpenCitation }) {
   const isUser = message.role === "user";
   const bubbleContent = message.content || (message.streaming ? "Thinking..." : "");
   return (
@@ -1160,10 +1200,15 @@ function ChatMessage({ message }) {
         {message.citations?.length ? (
           <div className="citation-list">
             {message.citations.map((citation) => (
-              <span className="citation-pill" key={citation.chunk_id ?? `${citation.paper_id}-${citation.page_number}`}>
+              <button
+                className="citation-pill"
+                key={citation.chunk_id ?? `${citation.paper_id}-${citation.page_number}`}
+                onClick={() => onOpenCitation?.(citation)}
+                type="button"
+              >
                 {citation.title || citation.paper_id}
                 {citation.page_number ? `, p. ${citation.page_number}` : ""}
-              </span>
+              </button>
             ))}
           </div>
         ) : null}
