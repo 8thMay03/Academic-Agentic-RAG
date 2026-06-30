@@ -1,13 +1,20 @@
 import {
   ArrowDownToLine,
   ArrowLeft,
+  ArrowUp,
   Bot,
   BrainCircuit,
   CalendarDays,
+  ChevronDown,
+  Clipboard,
   FileText,
+  Globe2,
   Home,
   Library,
+  Link2,
   MessageSquare,
+  MoreVertical,
+  PanelLeft,
   Pencil,
   Plus,
   RefreshCw,
@@ -546,81 +553,206 @@ function HomeScreen({ onStartChat, onStartResearch }) {
 }
 
 function ResearchWorkspace({ maxResults, onBack, onChangeMaxResults, onChangeQuery, onSubmit, query, result, state }) {
+  const paperCount = result?.papers?.length ?? 0;
+  const resultDate = new Intl.DateTimeFormat("vi-VN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+
   return (
     <main className="research-mode-shell">
-      <header className="mode-header">
-        <button className="secondary-action" onClick={onBack} type="button">
+      <header className="research-topbar">
+        <button aria-label="Trang chủ" className="research-brand" onClick={onBack} type="button">
           <ArrowLeft size={17} aria-hidden="true" />
-          Trang chủ
         </button>
-        <div>
-          <h1>Nghiên cứu</h1>
-          <p>Nhập query để agent chạy workflow nghiên cứu và trả kết quả tổng hợp.</p>
-        </div>
+        <h1>{result?.query ? result.query : "Sổ ghi chú không có tiêu đề"}</h1>
+        <button aria-label="Tùy chọn" className="research-icon-button" type="button">
+          <MoreVertical size={18} aria-hidden="true" />
+        </button>
       </header>
 
-      <section className="research-workspace" aria-label="Research workflow">
-        <form className="research-query-panel" onSubmit={onSubmit}>
-          <div className="research-input-row">
-            <Search size={19} aria-hidden="true" />
-            <input
-              onChange={(event) => onChangeQuery(event.target.value)}
-              placeholder="Agentic RAG"
-              value={query}
-            />
-            <label>
-              Results
-              <input
-                max="20"
-                min="1"
-                onChange={(event) => onChangeMaxResults(Number(event.target.value))}
-                type="number"
-                value={maxResults}
-              />
-            </label>
-            <button disabled={state.loading || !query.trim()} type="submit">
-              <BrainCircuit size={17} aria-hidden="true" />
-              {state.loading ? "Đang nghiên cứu" : "Chạy nghiên cứu"}
+      <section className="research-notebook-shell" aria-label="Research workflow">
+        <aside className="research-source-panel" aria-label="Nguồn">
+          <div className="research-panel-header">
+            <h2>Nguồn</h2>
+            <button aria-label="Thu gọn nguồn" type="button">
+              <PanelLeft size={16} aria-hidden="true" />
             </button>
           </div>
-        </form>
 
-        {state.error ? <div className="error-box">{state.error}</div> : null}
-
-        {state.loading ? (
-          <div className="research-loading">
-            <BrainCircuit size={24} aria-hidden="true" />
-            <span>Agent đang tìm paper, phân tích và tổng hợp kết quả...</span>
-          </div>
-        ) : null}
-
-        {!result && !state.loading ? (
-          <div className="empty-state research-empty">
-            <Search size={26} aria-hidden="true" />
-            <span>Kết quả nghiên cứu sẽ xuất hiện ở đây.</span>
-          </div>
-        ) : null}
-
-        {result ? (
-          <div className="research-results">
-            <div className="section-title-row prominent">
-              <div>
-                <h2>Results for "{result.query}"</h2>
-                <p>{result.papers.length ? `${result.papers.length} papers found` : "No papers returned"}</p>
+          <form className="research-side-search" onSubmit={onSubmit}>
+            <button disabled={state.loading || !query.trim()} type="submit">
+              <Plus size={16} aria-hidden="true" />
+              Thêm nguồn
+            </button>
+            <div className="research-source-searchbox">
+              <input
+                onChange={(event) => onChangeQuery(event.target.value)}
+                placeholder="Tìm nguồn mới trên web"
+                value={query}
+              />
+              <div className="research-filter-row">
+                <span>
+                  <Globe2 size={15} aria-hidden="true" />
+                  Web
+                  <ChevronDown size={14} aria-hidden="true" />
+                </span>
+                <label>
+                  <BrainCircuit size={15} aria-hidden="true" />
+                  Nghiên cứu nhanh
+                  <input
+                    aria-label="Số kết quả"
+                    max="20"
+                    min="1"
+                    onChange={(event) => onChangeMaxResults(Number(event.target.value))}
+                    type="number"
+                    value={maxResults}
+                  />
+                </label>
               </div>
+              <Search size={18} aria-hidden="true" />
+            </div>
+          </form>
+
+          <div className={`research-source-list ${paperCount ? "" : "empty"}`}>
+            {paperCount ? (
+              result.papers.map((paper) => (
+                <a className="research-source-item" href={paper.arxivUrl ?? paper.url ?? paper.pdfUrl} key={paper.paper_id} rel="noreferrer" target="_blank">
+                  <FileText size={16} aria-hidden="true" />
+                  <span>{paper.title}</span>
+                </a>
+              ))
+            ) : (
+              <>
+                <FileText size={25} aria-hidden="true" />
+                <strong>Các nguồn đã lưu sẽ xuất hiện ở đây</strong>
+                <p>Nhập query và chạy nghiên cứu để thêm paper vào danh sách nguồn.</p>
+              </>
+            )}
+          </div>
+        </aside>
+
+        <section className="research-conversation" aria-label="Cuộc trò chuyện">
+          <header className="research-conversation-header">
+            <h2>Cuộc trò chuyện</h2>
+            <button className="research-chip-button" type="button">
+              <BrainCircuit size={15} aria-hidden="true" />
+              Tùy chỉnh
+            </button>
+          </header>
+
+          <div className="research-conversation-body">
+            <div className="research-note-title">
+              <div className="research-note-icon">
+                <BrainCircuit size={24} aria-hidden="true" />
+              </div>
+              <h2>{result?.query ? result.query : "Sổ ghi chú không có tiêu đề"}</h2>
+              <p>{paperCount} nguồn · {resultDate}</p>
             </div>
 
-            {result.summary ? <ResearchTextBlock title="Summary" content={result.summary} /> : null}
-            {result.comparison ? <ResearchTextBlock title="Comparison" content={result.comparison} /> : null}
-            {result.report ? <ResearchTextBlock title="Report" content={result.report} /> : null}
+            {!result ? (
+              <form className="research-hero-card" onSubmit={onSubmit}>
+                <button aria-label="Đóng gợi ý" className="research-card-close" type="button">
+                  <X size={20} aria-hidden="true" />
+                </button>
+                <h3>
+                  Tạo bản tổng quan nghiên cứu từ
+                  <span> query của bạn</span>
+                </h3>
+                <div className="research-web-input">
+                  <input
+                    onChange={(event) => onChangeQuery(event.target.value)}
+                    placeholder="Tìm nguồn mới trên web"
+                    value={query}
+                  />
+                  <div className="research-filter-row">
+                    <span>
+                      <Globe2 size={15} aria-hidden="true" />
+                      Web
+                      <ChevronDown size={14} aria-hidden="true" />
+                    </span>
+                    <label>
+                      <BrainCircuit size={15} aria-hidden="true" />
+                      Nghiên cứu nhanh
+                      <input
+                        aria-label="Số kết quả"
+                        max="20"
+                        min="1"
+                        onChange={(event) => onChangeMaxResults(Number(event.target.value))}
+                        type="number"
+                        value={maxResults}
+                      />
+                    </label>
+                  </div>
+                  <button aria-label="Chạy nghiên cứu" disabled={state.loading || !query.trim()} type="submit">
+                    <Search size={18} aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="research-dropzone">
+                  <strong>hoặc thêm tài liệu của bạn</strong>
+                  <p>pdf, hình ảnh, tài liệu, âm thanh, và các định dạng khác</p>
+                  <div className="research-source-actions">
+                    <span>
+                      <UploadCloud size={15} aria-hidden="true" />
+                      Tải tệp lên
+                    </span>
+                    <span>
+                      <Link2 size={15} aria-hidden="true" />
+                      Trang web
+                    </span>
+                    <span>
+                      <Library size={15} aria-hidden="true" />
+                      Drive
+                    </span>
+                    <span>
+                      <Clipboard size={15} aria-hidden="true" />
+                      Văn bản đã sao chép
+                    </span>
+                  </div>
+                </div>
+              </form>
+            ) : null}
 
-            <section className="paper-result-grid" aria-label="Research papers">
-              {result.papers.map((paper) => (
-                <ResearchPaperCard key={paper.paper_id} paper={paper} />
-              ))}
-            </section>
+            {state.error ? <div className="research-error">{state.error}</div> : null}
+
+            {state.loading ? (
+              <div className="research-loading">
+                <BrainCircuit size={24} aria-hidden="true" />
+                <span>Agent đang tìm paper, phân tích và tổng hợp kết quả...</span>
+              </div>
+            ) : null}
+
+            {result ? (
+              <div className="research-results">
+                <div className="research-results-header">
+                  <div>
+                    <h2>Kết quả cho "{result.query}"</h2>
+                    <p>{paperCount ? `${paperCount} papers found` : "No papers returned"}</p>
+                  </div>
+                </div>
+
+                {result.summary ? <ResearchTextBlock title="Summary" content={result.summary} /> : null}
+                {result.comparison ? <ResearchTextBlock title="Comparison" content={result.comparison} /> : null}
+                {result.report ? <ResearchTextBlock title="Report" content={result.report} /> : null}
+
+                <section className="paper-result-grid" aria-label="Research papers">
+                  {result.papers.map((paper) => (
+                    <ResearchPaperCard key={paper.paper_id} paper={paper} />
+                  ))}
+                </section>
+              </div>
+            ) : null}
           </div>
-        ) : null}
+
+          <form className="research-bottom-composer" onSubmit={onSubmit}>
+            <input onChange={(event) => onChangeQuery(event.target.value)} placeholder="Bắt đầu nhập..." value={query} />
+            <span>{paperCount} nguồn</span>
+            <button aria-label="Gửi" disabled={state.loading || !query.trim()} type="submit">
+              <ArrowUp size={18} aria-hidden="true" />
+            </button>
+          </form>
+        </section>
       </section>
     </main>
   );
