@@ -85,8 +85,10 @@ RETRIEVED_CHUNK = {
     },
     "score": 0.91,
     "rerank_score": 0.93,
+    "cross_encoder_score": 2.6,
     "vector_score": 0.89,
     "keyword_score": 1.0,
+    "reranker": "fake-cross-encoder",
     "retrieval_sources": ["keyword", "vector"],
     "citation": {
         "paper_id": "paper-1",
@@ -141,6 +143,8 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert citations[0].chunk_id == "paper-1:p3:c0"
     assert citations[0].evidence_quality == "high"
     assert citations[0].retrieval_sources == ["keyword", "vector"]
+    assert citations[0].cross_encoder_score == 2.6
+    assert citations[0].reranker == "fake-cross-encoder"
     assert citations[0].matched_terms == ["planning", "retrieve", "evidence"]
     assert "If the context does not contain enough information" in llm.prompts[0]
     assert "I don't know" in llm.prompts[0]

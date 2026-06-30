@@ -1128,9 +1128,11 @@ function EvidencePanel({ citation, pageNumber }) {
       <div className="evidence-metrics" aria-label="Evidence quality metrics">
         <Metric label="Score" value={formatScore(score)} />
         <Metric label="Rerank" value={formatScore(citation.rerank_score)} />
+        <Metric label="CrossEnc" value={formatScore(citation.cross_encoder_score)} />
         <Metric label="Vector" value={formatScore(citation.vector_score)} />
         <Metric label="Keyword" value={formatScore(citation.keyword_score)} />
         <Metric label="Source" value={formatRetrievalSources(citation.retrieval_sources)} wide />
+        <Metric label="Model" value={citation.reranker ?? "n/a"} wide />
       </div>
 
       <p className="evidence-passage">

@@ -10,8 +10,10 @@ class Citation(BaseModel):
     text: str | None = None
     score: float | None = None
     rerank_score: float | None = None
+    cross_encoder_score: float | None = None
     vector_score: float | None = None
     keyword_score: float | None = None
+    reranker: str | None = None
     retrieval_sources: list[str] = Field(default_factory=list)
     evidence_quality: str | None = None
     matched_terms: list[str] = Field(default_factory=list)
