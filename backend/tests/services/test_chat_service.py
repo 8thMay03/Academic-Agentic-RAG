@@ -137,7 +137,7 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
 
     answer, citations = await service.answer("How does planning retrieve evidence?")
 
-    assert answer == "It uses planning for retrieval decisions (p. 3)."
+    assert answer == "It uses planning for retrieval decisions (p. 3). [paper-1:p3:c0]"
     assert citations[0].paper_id == "paper-1"
     assert citations[0].page_number == 3
     assert citations[0].chunk_id == "paper-1:p3:c0"
@@ -172,7 +172,7 @@ async def test_chat_service_uses_recent_history_for_follow_up_retrieval_and_prom
 
     await service.answer("What are its retrieval decisions?", chat_history=history)
 
-    assert "Recent conversation for resolving follow-up references" in retriever.query
+    assert "Previous user questions for resolving follow-up references" in retriever.query
     assert "How does Agentic RAG retrieve evidence?" in retriever.query
     assert "Current question: What are its retrieval decisions?" in retriever.query
     assert "Recent conversation:" in llm.prompts[0]
@@ -205,7 +205,7 @@ async def test_chat_service_retries_without_threshold_when_selected_paper_has_co
         score_threshold=0.8,
     )
 
-    assert answer == "It uses planning for retrieval decisions (p. 3)."
+    assert answer == "It uses planning for retrieval decisions (p. 3). [paper-1:p3:c0]"
     assert citations[0].page_number == 3
     assert retriever.calls == [
         {
@@ -234,3 +234,15 @@ async def test_chat_service_filters_context_by_paper_ids() -> None:
     assert answer == UNKNOWN_ANSWER
     assert citations == []
     assert llm.prompts == []
+
+
+@pytest.mark.asyncio
+async def test_chat_service_removes_invalid_citations_from_answer() -> None:
+    retriever = FakeRetrieverService([RETRIEVED_CHUNK])
+    llm = FakeLLMService("It uses planning [made-up:p1:c0].")
+    service = ChatService(retriever, llm)
+
+    answer, citations = await service.answer("How does planning retrieve evidence?")
+
+    assert answer == "It uses planning. [paper-1:p3:c0]"
+    assert [citation.chunk_id for citation in citations] == ["paper-1:p3:c0"]
