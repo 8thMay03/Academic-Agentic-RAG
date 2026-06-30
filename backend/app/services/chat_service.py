@@ -1,3 +1,4 @@
+import json
 import re
 from collections.abc import AsyncIterator
 
@@ -12,7 +13,9 @@ UNKNOWN_ANSWER = "I don't know"
 MAX_HISTORY_MESSAGES = 6
 MAX_HISTORY_CHARS = 2000
 MAX_RETRIEVAL_HISTORY_QUESTIONS = 3
+MAX_RETRIEVAL_QUERIES = 3
 CITATION_PATTERN = re.compile(r"\[([^\[\]]+)\]")
+JSON_OBJECT_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 
 
 class ChatService:
@@ -64,23 +67,21 @@ class ChatService:
         score_threshold: float | None,
         chat_history: list[ChatHistoryMessage] | None = None,
     ) -> tuple[str | None, list[Citation]]:
-        retrieval_query = self._build_retrieval_query(question, chat_history)
-        retrieved_chunks = await self._retriever_service.retrieve(
-            retrieval_query,
-            top_k=top_k,
+        retrieval_queries = await self._build_retrieval_queries(question, chat_history)
+        filtered_chunks = await self._retrieve_with_queries(
+            retrieval_queries,
+            top_k,
             score_threshold=score_threshold,
             paper_ids=paper_ids,
         )
-        filtered_chunks = self._filter_by_paper_ids(retrieved_chunks, paper_ids)
 
         if not filtered_chunks and score_threshold is not None and score_threshold > 0:
-            retrieved_chunks = await self._retriever_service.retrieve(
-                retrieval_query,
-                top_k=top_k,
+            filtered_chunks = await self._retrieve_with_queries(
+                retrieval_queries,
+                top_k,
                 score_threshold=None,
                 paper_ids=paper_ids,
             )
-            filtered_chunks = self._filter_by_paper_ids(retrieved_chunks, paper_ids)
 
         if not filtered_chunks:
             return None, []
@@ -102,6 +103,40 @@ class ChatService:
             if (chunk.get("metadata") or {}).get("paper_id") in allowed_paper_ids
         ]
 
+    async def _retrieve_with_queries(
+        self,
+        retrieval_queries: list[str],
+        top_k: int,
+        score_threshold: float | None,
+        paper_ids: list[str] | None,
+    ) -> list[dict]:
+        retrieved_chunks = []
+        for retrieval_query in retrieval_queries:
+            chunks = await self._retriever_service.retrieve(
+                retrieval_query,
+                top_k=top_k,
+                score_threshold=score_threshold,
+                paper_ids=paper_ids,
+            )
+            retrieved_chunks.extend(self._filter_by_paper_ids(chunks, paper_ids))
+
+        return self._merge_retrieved_chunks(retrieved_chunks)[:top_k]
+
+    async def _build_retrieval_queries(
+        self,
+        question: str,
+        chat_history: list[ChatHistoryMessage] | None,
+    ) -> list[str]:
+        fallback_query = self._build_retrieval_query(question, chat_history)
+        prompt = self._retrieval_plan_prompt(question, chat_history)
+
+        try:
+            raw_plan = await self._llm_service.complete(prompt)
+        except Exception:
+            return [fallback_query]
+
+        return self._parse_retrieval_plan(raw_plan, fallback_query)
+
     @staticmethod
     def _build_retrieval_query(question: str, chat_history: list[ChatHistoryMessage] | None) -> str:
         prior_questions = ChatService._recent_user_questions(chat_history)
@@ -113,6 +148,92 @@ class ChatService:
             f"{prior_questions}\n\n"
             f"Current question: {question}"
         )
+
+    @staticmethod
+    def _retrieval_plan_prompt(question: str, chat_history: list[ChatHistoryMessage] | None) -> str:
+        prior_questions = ChatService._recent_user_questions(chat_history) or "None"
+        return (
+            "Create a retrieval plan for question answering over the selected paper PDFs.\n"
+            "Rewrite the current question as a standalone retrieval query. Then provide up to 2 additional "
+            "short query variants that may use alternate academic wording from the same question.\n"
+            "Do not answer the question. Do not add facts that are not implied by the conversation.\n"
+            "Return JSON only with this schema:\n"
+            '{"standalone_question":"...","search_queries":["...","..."]}\n\n'
+            f"Previous user questions:\n{prior_questions}\n\n"
+            f"Current question: {question}"
+        )
+
+    @staticmethod
+    def _parse_retrieval_plan(raw_plan: str, fallback_query: str) -> list[str]:
+        plan_text = raw_plan.strip()
+        json_match = JSON_OBJECT_PATTERN.search(plan_text)
+        if json_match:
+            plan_text = json_match.group(0)
+
+        try:
+            plan = json.loads(plan_text)
+        except json.JSONDecodeError:
+            return [fallback_query]
+        if not isinstance(plan, dict):
+            return [fallback_query]
+
+        queries = [ChatService._clean_query(plan.get("standalone_question"))]
+        search_queries = plan.get("search_queries") or []
+        if isinstance(search_queries, list):
+            queries.extend(ChatService._clean_query(query) for query in search_queries)
+
+        return ChatService._dedupe_queries([*queries, fallback_query])
+
+    @staticmethod
+    def _clean_query(query: object) -> str:
+        if not isinstance(query, str):
+            return ""
+        return " ".join(query.split()).strip(" \t\n\r\"'")
+
+    @staticmethod
+    def _dedupe_queries(queries: list[str]) -> list[str]:
+        deduped_queries = []
+        seen_queries = set()
+
+        for query in queries:
+            normalized_query = query.lower()
+            if not query or normalized_query in seen_queries:
+                continue
+            seen_queries.add(normalized_query)
+            deduped_queries.append(query)
+            if len(deduped_queries) >= MAX_RETRIEVAL_QUERIES:
+                break
+
+        return deduped_queries
+
+    @staticmethod
+    def _merge_retrieved_chunks(chunks: list[dict]) -> list[dict]:
+        merged_chunks: dict[str, dict] = {}
+
+        for chunk in chunks:
+            chunk_id = ChatService._chunk_id_for(chunk)
+            if not chunk_id:
+                continue
+            existing_chunk = merged_chunks.get(chunk_id)
+            if (
+                existing_chunk is None
+                or ChatService._ranking_score(chunk) > ChatService._ranking_score(existing_chunk)
+            ):
+                merged_chunks[chunk_id] = chunk
+
+        return sorted(
+            merged_chunks.values(),
+            key=ChatService._ranking_score,
+            reverse=True,
+        )
+
+    @staticmethod
+    def _ranking_score(chunk: dict) -> float:
+        for score_key in ("rerank_score", "score", "vector_score", "keyword_score"):
+            score = ChatService._optional_float(chunk.get(score_key))
+            if score is not None:
+                return score
+        return 0.0
 
     @staticmethod
     def _conversation_context(chat_history: list[ChatHistoryMessage] | None) -> str:

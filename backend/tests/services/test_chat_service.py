@@ -59,18 +59,47 @@ class ThresholdSensitiveRetrieverService:
         return [] if score_threshold else [RETRIEVED_CHUNK]
 
 
+class QueryAwareRetrieverService:
+    def __init__(self, chunks_by_query: dict[str, list[dict]]) -> None:
+        self.chunks_by_query = chunks_by_query
+        self.calls = []
+
+    async def retrieve(
+        self,
+        query: str,
+        top_k: int = 5,
+        score_threshold: float | None = None,
+        paper_ids: list[str] | None = None,
+    ) -> list[dict]:
+        self.calls.append(
+            {
+                "query": query,
+                "top_k": top_k,
+                "score_threshold": score_threshold,
+                "paper_ids": paper_ids,
+            }
+        )
+        return self.chunks_by_query.get(query, [])
+
+
 class FakeLLMService:
-    def __init__(self, answer: str) -> None:
-        self.answer = answer
+    def __init__(self, responses: str | list[str]) -> None:
+        self.responses = [responses] if isinstance(responses, str) else list(responses)
         self.prompts: list[str] = []
 
     async def complete(self, prompt: str) -> str:
         self.prompts.append(prompt)
-        return self.answer
+        if len(self.responses) > 1:
+            return self.responses.pop(0)
+        return self.responses[0]
 
     async def stream_complete(self, prompt: str):
         self.prompts.append(prompt)
-        for token in self.answer.split(" "):
+        if len(self.responses) > 1:
+            response = self.responses.pop(0)
+        else:
+            response = self.responses[0]
+        for token in response.split(" "):
             yield f"{token} "
 
 
@@ -110,7 +139,8 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
 
     assert answer == UNKNOWN_ANSWER
     assert citations == []
-    assert llm.prompts == []
+    assert len(llm.prompts) == 1
+    assert "Create a retrieval plan" in llm.prompts[0]
     assert retriever.top_k == 3
     assert retriever.calls == [
         {
@@ -146,16 +176,26 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert citations[0].cross_encoder_score == 2.6
     assert citations[0].reranker == "fake-cross-encoder"
     assert citations[0].matched_terms == ["planning", "retrieve", "evidence"]
-    assert "If the context does not contain enough information" in llm.prompts[0]
-    assert "I don't know" in llm.prompts[0]
-    assert "Every factual claim supported by paper context" in llm.prompts[0]
-    assert "[paper-1:p3:c0]" in llm.prompts[0]
+    assert "Create a retrieval plan" in llm.prompts[0]
+    assert "If the context does not contain enough information" in llm.prompts[1]
+    assert "I don't know" in llm.prompts[1]
+    assert "Every factual claim supported by paper context" in llm.prompts[1]
+    assert "[paper-1:p3:c0]" in llm.prompts[1]
 
 
 @pytest.mark.asyncio
 async def test_chat_service_uses_recent_history_for_follow_up_retrieval_and_prompt() -> None:
     retriever = FakeRetrieverService([RETRIEVED_CHUNK])
-    llm = FakeLLMService("It uses planning for retrieval decisions [paper-1:p3:c0].")
+    llm = FakeLLMService(
+        [
+            (
+                '{"standalone_question":"How does Agentic RAG make retrieval decisions?",'
+                '"search_queries":["Agentic RAG planning retrieval evidence",'
+                '"retrieval decision mechanism"]}'
+            ),
+            "It uses planning for retrieval decisions [paper-1:p3:c0].",
+        ]
+    )
     service = ChatService(retriever, llm)
     history = [
         ChatHistoryMessage(
@@ -172,11 +212,15 @@ async def test_chat_service_uses_recent_history_for_follow_up_retrieval_and_prom
 
     await service.answer("What are its retrieval decisions?", chat_history=history)
 
-    assert "Previous user questions for resolving follow-up references" in retriever.query
-    assert "How does Agentic RAG retrieve evidence?" in retriever.query
-    assert "Current question: What are its retrieval decisions?" in retriever.query
-    assert "Recent conversation:" in llm.prompts[0]
-    assert "Use the recent conversation only to resolve" in llm.prompts[0]
+    assert [call["query"] for call in retriever.calls] == [
+        "How does Agentic RAG make retrieval decisions?",
+        "Agentic RAG planning retrieval evidence",
+        "retrieval decision mechanism",
+    ]
+    assert "Create a retrieval plan" in llm.prompts[0]
+    assert "Previous user questions:" in llm.prompts[0]
+    assert "Recent conversation:" in llm.prompts[1]
+    assert "Use the recent conversation only to resolve" in llm.prompts[1]
 
 
 @pytest.mark.asyncio
@@ -190,7 +234,7 @@ async def test_chat_service_streams_answer_tokens_with_citations() -> None:
 
     assert tokens == ["It ", "uses ", "planning "]
     assert citations[0].paper_id == "paper-1"
-    assert "Retrieved context" in llm.prompts[0]
+    assert "Retrieved context" in llm.prompts[1]
 
 
 @pytest.mark.asyncio
@@ -233,7 +277,8 @@ async def test_chat_service_filters_context_by_paper_ids() -> None:
 
     assert answer == UNKNOWN_ANSWER
     assert citations == []
-    assert llm.prompts == []
+    assert len(llm.prompts) == 1
+    assert "Create a retrieval plan" in llm.prompts[0]
 
 
 @pytest.mark.asyncio
@@ -246,3 +291,60 @@ async def test_chat_service_removes_invalid_citations_from_answer() -> None:
 
     assert answer == "It uses planning. [paper-1:p3:c0]"
     assert [citation.chunk_id for citation in citations] == ["paper-1:p3:c0"]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_retrieves_with_multi_query_and_deduplicates_chunks() -> None:
+    lower_scored_chunk = {
+        **RETRIEVED_CHUNK,
+        "score": 0.4,
+        "rerank_score": 0.5,
+    }
+    comparison_chunk = {
+        **RETRIEVED_CHUNK,
+        "id": "paper-1:p4:c0",
+        "text": "The experiments compare retrieval planning against a non-planning baseline.",
+        "metadata": {
+            "paper_id": "paper-1",
+            "title": "Agentic RAG",
+            "page_number": "4",
+            "chunk_id": "paper-1:p4:c0",
+        },
+        "score": 0.88,
+        "rerank_score": 0.91,
+        "citation": {
+            "paper_id": "paper-1",
+            "title": "Agentic RAG",
+            "page_number": 4,
+            "chunk_id": "paper-1:p4:c0",
+            "text": "The experiments compare retrieval planning against a non-planning baseline.",
+        },
+    }
+    retriever = QueryAwareRetrieverService(
+        {
+            "How does the method compare with baselines?": [lower_scored_chunk],
+            "baseline comparison retrieval planning": [comparison_chunk],
+            "non-planning baseline experiments": [RETRIEVED_CHUNK, comparison_chunk],
+        }
+    )
+    llm = FakeLLMService(
+        [
+            (
+                '{"standalone_question":"How does the method compare with baselines?",'
+                '"search_queries":["baseline comparison retrieval planning",'
+                '"non-planning baseline experiments"]}'
+            ),
+            "It compares against a non-planning baseline [paper-1:p4:c0].",
+        ]
+    )
+    service = ChatService(retriever, llm)
+
+    answer, citations = await service.answer("How does the method compare with baselines?", top_k=2)
+
+    assert [call["query"] for call in retriever.calls] == [
+        "How does the method compare with baselines?",
+        "baseline comparison retrieval planning",
+        "non-planning baseline experiments",
+    ]
+    assert answer == "It compares against a non-planning baseline [paper-1:p4:c0]."
+    assert [citation.chunk_id for citation in citations] == ["paper-1:p4:c0"]
