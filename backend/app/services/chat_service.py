@@ -4,6 +4,7 @@ from app.models.chat import ChatHistoryMessage
 from app.models.citation import Citation
 from app.services.llm_service import LLMService
 from app.services.retriever_service import RetrieverService
+from app.vectorstore.bm25 import tokenize
 
 
 UNKNOWN_ANSWER = "I don't know"
@@ -80,7 +81,7 @@ class ChatService:
         if not filtered_chunks:
             return None, []
 
-        return self._build_prompt(question, filtered_chunks, chat_history), self._citations(filtered_chunks)
+        return self._build_prompt(question, filtered_chunks, chat_history), self._citations(filtered_chunks, question)
 
     @staticmethod
     async def _single_token_stream(token: str) -> AsyncIterator[str]:
@@ -176,7 +177,7 @@ class ChatService:
         )
 
     @staticmethod
-    def _citations(chunks: list[dict]) -> list[Citation]:
+    def _citations(chunks: list[dict], question: str = "") -> list[Citation]:
         citations: list[Citation] = []
         seen_chunk_ids: set[str] = set()
 
@@ -208,6 +209,7 @@ class ChatService:
                     keyword_score=ChatService._optional_float(chunk.get("keyword_score")),
                     retrieval_sources=list(chunk.get("retrieval_sources") or []),
                     evidence_quality=ChatService._evidence_quality(chunk),
+                    matched_terms=ChatService._matched_terms(question, citation.get("text") or chunk.get("text") or ""),
                 )
             )
 
@@ -234,3 +236,15 @@ class ChatService:
         if score >= 0.5:
             return "medium"
         return "low"
+
+    @staticmethod
+    def _matched_terms(question: str, text: str) -> list[str]:
+        query_terms = []
+        seen_terms = set()
+        for term in tokenize(question):
+            if term not in seen_terms:
+                seen_terms.add(term)
+                query_terms.append(term)
+
+        text_terms = set(tokenize(text))
+        return [term for term in query_terms if term in text_terms][:8]

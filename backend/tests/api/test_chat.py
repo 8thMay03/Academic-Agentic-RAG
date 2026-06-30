@@ -42,6 +42,7 @@ class FakeChatService:
                     keyword_score=1.0,
                     retrieval_sources=["keyword", "vector"],
                     evidence_quality="high",
+                    matched_terms=["planning"],
                 )
             ],
         )
@@ -86,6 +87,7 @@ class FakeChatService:
                     keyword_score=1.0,
                     retrieval_sources=["keyword", "vector"],
                     evidence_quality="high",
+                    matched_terms=["planning"],
                 )
             ],
         )
@@ -203,6 +205,7 @@ def test_chat_with_papers_returns_answer_and_citations() -> None:
                 "keyword_score": 1.0,
                 "retrieval_sources": ["keyword", "vector"],
                 "evidence_quality": "high",
+                "matched_terms": ["planning"],
             }
         ],
     }

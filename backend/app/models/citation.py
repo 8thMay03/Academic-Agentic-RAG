@@ -14,3 +14,4 @@ class Citation(BaseModel):
     keyword_score: float | None = None
     retrieval_sources: list[str] = Field(default_factory=list)
     evidence_quality: str | None = None
+    matched_terms: list[str] = Field(default_factory=list)

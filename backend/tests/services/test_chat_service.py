@@ -133,7 +133,7 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     llm = FakeLLMService("It uses planning for retrieval decisions (p. 3).")
     service = ChatService(retriever, llm)
 
-    answer, citations = await service.answer("What is the method?")
+    answer, citations = await service.answer("How does planning retrieve evidence?")
 
     assert answer == "It uses planning for retrieval decisions (p. 3)."
     assert citations[0].paper_id == "paper-1"
@@ -141,6 +141,7 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert citations[0].chunk_id == "paper-1:p3:c0"
     assert citations[0].evidence_quality == "high"
     assert citations[0].retrieval_sources == ["keyword", "vector"]
+    assert citations[0].matched_terms == ["planning", "retrieve", "evidence"]
     assert "If the context does not contain enough information" in llm.prompts[0]
     assert "I don't know" in llm.prompts[0]
     assert "Every factual claim supported by paper context" in llm.prompts[0]

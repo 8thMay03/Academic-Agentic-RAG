@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ArrowDownToLine,
   ArrowLeft,
   ArrowUp,
@@ -1057,6 +1058,7 @@ function PaperPreviewOverlay({ onClose, source }) {
   const pdfUrl = source.filename ? getPdfFileUrl(source.filename) : null;
   const pageNumber = source.pageNumber ?? source.citation?.page_number ?? source.citation?.page;
   const pdfFragment = pageNumber ? `#page=${pageNumber}&view=FitH` : "#view=FitH";
+  const citation = source.citation;
 
   return (
     <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Paper preview">
@@ -1082,25 +1084,8 @@ function PaperPreviewOverlay({ onClose, source }) {
           ) : null}
         </div>
 
-        {source.citation?.text ? (
-          <div className="citation-preview">
-            <strong>Referenced passage{pageNumber ? ` on page ${pageNumber}` : ""}</strong>
-            <div className="citation-preview-meta">
-              {source.citation.chunk_id ? <span>{source.citation.chunk_id}</span> : null}
-              {source.citation.evidence_quality ? (
-                <span className={`evidence-badge ${evidenceQualityClass(source.citation.evidence_quality)}`}>
-                  {formatEvidenceQuality(source.citation.evidence_quality)}
-                </span>
-              ) : null}
-              {Number.isFinite(source.citation.rerank_score ?? source.citation.score) ? (
-                <span>score {formatScore(source.citation.rerank_score ?? source.citation.score)}</span>
-              ) : null}
-              {source.citation.retrieval_sources?.length ? (
-                <span>{source.citation.retrieval_sources.join(" + ")}</span>
-              ) : null}
-            </div>
-            <p>{source.citation.text}</p>
-          </div>
+        {citation?.text ? (
+          <EvidencePanel citation={citation} pageNumber={pageNumber} />
         ) : null}
 
         {pdfUrl ? (
@@ -1112,6 +1097,54 @@ function PaperPreviewOverlay({ onClose, source }) {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function EvidencePanel({ citation, pageNumber }) {
+  const score = citation.rerank_score ?? citation.score;
+  const hasWeakEvidence = isWeakEvidence(citation);
+
+  return (
+    <section className="evidence-panel" aria-label="Evidence details">
+      <div className="evidence-panel-header">
+        <div>
+          <strong>Referenced passage{pageNumber ? ` on page ${pageNumber}` : ""}</strong>
+          <div className="citation-preview-meta">
+            {citation.chunk_id ? <span>{citation.chunk_id}</span> : null}
+            <span className={`evidence-badge ${evidenceQualityClass(citation.evidence_quality)}`}>
+              {formatEvidenceQuality(citation.evidence_quality)}
+            </span>
+          </div>
+        </div>
+        {hasWeakEvidence ? (
+          <div className="evidence-warning" role="status">
+            <AlertTriangle size={15} aria-hidden="true" />
+            Weak context
+          </div>
+        ) : null}
+      </div>
+
+      <div className="evidence-metrics" aria-label="Evidence quality metrics">
+        <Metric label="Score" value={formatScore(score)} />
+        <Metric label="Rerank" value={formatScore(citation.rerank_score)} />
+        <Metric label="Vector" value={formatScore(citation.vector_score)} />
+        <Metric label="Keyword" value={formatScore(citation.keyword_score)} />
+        <Metric label="Source" value={formatRetrievalSources(citation.retrieval_sources)} wide />
+      </div>
+
+      <p className="evidence-passage">
+        <HighlightedText text={citation.text} terms={citation.matched_terms} />
+      </p>
+    </section>
+  );
+}
+
+function Metric({ label, value, wide = false }) {
+  return (
+    <div className={`evidence-metric ${wide ? "wide" : ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -1267,6 +1300,31 @@ function evidenceQualityClass(quality) {
 
 function formatScore(score) {
   return Number.isFinite(score) ? score.toFixed(2) : "n/a";
+}
+
+function formatRetrievalSources(sources) {
+  return sources?.length ? sources.join(" + ") : "n/a";
+}
+
+function isWeakEvidence(citation) {
+  const score = citation?.rerank_score ?? citation?.score;
+  return citation?.evidence_quality === "low" || citation?.evidence_quality === "unknown" || (Number.isFinite(score) && score < 0.5);
+}
+
+function HighlightedText({ text, terms }) {
+  if (!text) return null;
+  const highlightTerms = Array.from(new Set((terms ?? []).filter(Boolean))).sort((a, b) => b.length - a.length);
+  if (!highlightTerms.length) return text;
+
+  const pattern = new RegExp(`(${highlightTerms.map(escapeRegExp).join("|")})`, "gi");
+  return text.split(pattern).map((part, index) => {
+    const isMatch = highlightTerms.some((term) => term.toLowerCase() === part.toLowerCase());
+    return isMatch ? <mark key={`${part}-${index}`}>{part}</mark> : part;
+  });
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export default App;
