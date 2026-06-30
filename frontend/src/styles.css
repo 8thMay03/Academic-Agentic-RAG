@@ -1721,11 +1721,66 @@ button:disabled {
 .citation-pill {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
+  max-width: min(100%, 560px);
   border: 1px solid #c8d4dc;
   background: #f4f7fa;
   color: #405063;
   padding: 4px 7px;
   font-size: 0.76rem;
+}
+
+.citation-main,
+.citation-chunk {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.citation-main {
+  max-width: 220px;
+}
+
+.citation-chunk {
+  max-width: 170px;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.7rem;
+}
+
+.citation-quality,
+.evidence-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.quality-high .citation-quality,
+.evidence-badge.quality-high {
+  background: #dff4e8;
+  color: #17623d;
+}
+
+.quality-medium .citation-quality,
+.evidence-badge.quality-medium {
+  background: #fff2cf;
+  color: #7a4b00;
+}
+
+.quality-low .citation-quality,
+.evidence-badge.quality-low {
+  background: #ffe3dc;
+  color: #8a2b1d;
+}
+
+.quality-unknown .citation-quality,
+.evidence-badge.quality-unknown {
+  background: #e8edf3;
+  color: #475569;
 }
 
 .citation-pill:hover {
@@ -2328,18 +2383,117 @@ button:disabled {
   white-space: nowrap;
 }
 
-.citation-preview {
+.citation-preview,
+.evidence-panel {
   border-bottom: 1px solid #d8e0e8;
   background: #f6f8fa;
   color: #334155;
   padding: 12px 18px;
 }
 
-.citation-preview strong {
+.citation-preview strong,
+.evidence-panel strong {
   display: block;
   color: #17202a;
   font-size: 0.86rem;
   line-height: 1.35;
+}
+
+.evidence-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.evidence-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.evidence-warning {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #f2b5a8;
+  border-radius: 999px;
+  background: #fff0ec;
+  color: #8a2b1d;
+  padding: 4px 8px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.evidence-missing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #526173;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.citation-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.citation-preview-meta span:not(.evidence-badge) {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.evidence-metric {
+  min-width: 0;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 7px 8px;
+}
+
+.evidence-metric.wide {
+  min-width: 140px;
+}
+
+.evidence-metric span,
+.evidence-metric strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-metric span {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.evidence-metric strong {
+  margin-top: 3px;
+  color: #17202a;
+  font-size: 0.8rem;
 }
 
 .citation-preview p {
@@ -2350,6 +2504,20 @@ button:disabled {
   -webkit-line-clamp: 3;
   font-size: 0.88rem;
   line-height: 1.5;
+}
+
+.evidence-passage {
+  margin: 0;
+  color: #273648;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.evidence-passage mark {
+  border-radius: 3px;
+  background: #fff2a8;
+  color: inherit;
+  padding: 0 2px;
 }
 
 .pdf-frame {
@@ -2466,6 +2634,18 @@ button:disabled {
   .workspace-header,
   .paper-detail-header {
     grid-template-columns: 1fr;
+  }
+
+  .evidence-panel-header {
+    flex-direction: column;
+  }
+
+  .evidence-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .evidence-metric.wide {
+    grid-column: 1 / -1;
   }
 
   .workspace-actions {

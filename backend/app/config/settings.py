@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     RETRIEVAL_VECTOR_WEIGHT: float = 0.65
     RETRIEVAL_KEYWORD_WEIGHT: float = 0.35
     RETRIEVAL_CANDIDATE_MULTIPLIER: int = 4
+    CROSS_ENCODER_RERANKER_ENABLED: bool = True
+    CROSS_ENCODER_RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    CROSS_ENCODER_FALLBACK_TO_HEURISTIC: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

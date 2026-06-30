@@ -29,17 +29,22 @@ async def chat_with_papers(
 ) -> ChatResponse:
     paper_ids = request.paper_ids
     history_key = request.chat_id or (request.paper_ids[0] if request.paper_ids else None)
+    chat_history = []
     if request.chat_id:
         session = await history_store.get_session(request.chat_id)
         if session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {request.chat_id}")
         paper_ids = paper_ids or [source.paper_id for source in session.sources]
+        chat_history = session.messages
+    elif history_key:
+        chat_history = await history_store.get_messages(history_key)
 
     answer, citations = await chat_service.answer(
         question=request.question,
         paper_ids=paper_ids,
         top_k=request.top_k,
         score_threshold=request.score_threshold,
+        chat_history=chat_history,
     )
     if history_key:
         await history_store.append_exchange(
@@ -59,11 +64,15 @@ async def stream_chat_with_papers(
 ) -> StreamingResponse:
     paper_ids = request.paper_ids
     history_key = request.chat_id or (request.paper_ids[0] if request.paper_ids else None)
+    chat_history = []
     if request.chat_id:
         session = await history_store.get_session(request.chat_id)
         if session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {request.chat_id}")
         paper_ids = paper_ids or [source.paper_id for source in session.sources]
+        chat_history = session.messages
+    elif history_key:
+        chat_history = await history_store.get_messages(history_key)
 
     async def event_stream() -> AsyncIterator[str]:
         answer_parts: list[str] = []
@@ -73,6 +82,7 @@ async def stream_chat_with_papers(
                 paper_ids=paper_ids,
                 top_k=request.top_k,
                 score_threshold=request.score_threshold,
+                chat_history=chat_history,
             )
             async for token in token_stream:
                 answer_parts.append(token)

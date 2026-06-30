@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ArrowDownToLine,
   ArrowLeft,
   ArrowUp,
@@ -95,22 +96,11 @@ function App() {
     void refreshDownloadedPdfs();
   }, []);
 
-  async function startChatMode() {
+  function startChatMode() {
     setMode("chat");
-    if (!activeChat) {
-      setSourceState({ loading: false, error: "", message: "" });
-      setChatState({ loading: false, error: "" });
-      try {
-        const session = await createChatSession("New chat");
-        setActiveChat(session);
-        setQuestion("");
-        setIsSourceModalOpen(false);
-        await refreshChatThreads();
-      } catch (error) {
-        setChatListState({ loading: false, error: error.message });
-      }
-      return;
-    }
+    setSourceState({ loading: false, error: "", message: "" });
+    setChatState({ loading: false, error: "" });
+    setQuestion("");
     setIsSourceModalOpen(false);
   }
 
@@ -574,8 +564,8 @@ function HomeScreen({ onStartChat, onStartResearch }) {
             <span className="mode-title">Chat với paper</span>
             <span className="mode-copy">Tải local PDF lên, index tài liệu, rồi hỏi đáp với agent dựa trên nội dung paper.</span>
             <span className="mode-action">
-              <UploadCloud size={17} aria-hidden="true" />
-              Tải PDF
+              <MessageSquare size={17} aria-hidden="true" />
+              Mở chat
             </span>
           </button>
 
@@ -1057,6 +1047,7 @@ function PaperPreviewOverlay({ onClose, source }) {
   const pdfUrl = source.filename ? getPdfFileUrl(source.filename) : null;
   const pageNumber = source.pageNumber ?? source.citation?.page_number ?? source.citation?.page;
   const pdfFragment = pageNumber ? `#page=${pageNumber}&view=FitH` : "#view=FitH";
+  const citation = source.citation;
 
   return (
     <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Paper preview">
@@ -1082,11 +1073,8 @@ function PaperPreviewOverlay({ onClose, source }) {
           ) : null}
         </div>
 
-        {source.citation?.text ? (
-          <div className="citation-preview">
-            <strong>Referenced passage{pageNumber ? ` on page ${pageNumber}` : ""}</strong>
-            <p>{source.citation.text}</p>
-          </div>
+        {citation?.text ? (
+          <EvidencePanel citation={citation} pageNumber={pageNumber} />
         ) : null}
 
         {pdfUrl ? (
@@ -1098,6 +1086,64 @@ function PaperPreviewOverlay({ onClose, source }) {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function EvidencePanel({ citation, pageNumber }) {
+  const score = citation.rerank_score ?? citation.score;
+  const hasWeakEvidence = isWeakEvidence(citation);
+  const hasMetrics = hasEvidenceMetrics(citation);
+
+  return (
+    <section className="evidence-panel" aria-label="Evidence details">
+      <div className="evidence-panel-header">
+        <div>
+          <strong>Referenced passage{pageNumber ? ` on page ${pageNumber}` : ""}</strong>
+          <div className="citation-preview-meta">
+            {citation.chunk_id ? <span>{citation.chunk_id}</span> : null}
+            <span className={`evidence-badge ${evidenceQualityClass(citation.evidence_quality)}`}>
+              {formatEvidenceQuality(citation.evidence_quality)}
+            </span>
+          </div>
+        </div>
+        {hasWeakEvidence ? (
+          <div className="evidence-warning" role="status">
+            <AlertTriangle size={15} aria-hidden="true" />
+            Weak context
+          </div>
+        ) : null}
+      </div>
+
+      {hasMetrics ? (
+        <div className="evidence-metrics" aria-label="Evidence quality metrics">
+          <Metric label="Score" value={formatScore(score)} />
+          <Metric label="Rerank" value={formatScore(citation.rerank_score)} />
+          <Metric label="CrossEnc" value={formatScore(citation.cross_encoder_score)} />
+          <Metric label="Vector" value={formatScore(citation.vector_score)} />
+          <Metric label="Keyword" value={formatScore(citation.keyword_score)} />
+          <Metric label="Source" value={formatRetrievalSources(citation.retrieval_sources)} wide />
+          <Metric label="Model" value={citation.reranker ?? "n/a"} wide />
+        </div>
+      ) : (
+        <div className="evidence-missing">
+          <AlertTriangle size={15} aria-hidden="true" />
+          Evidence scores were not stored for this older citation.
+        </div>
+      )}
+
+      <p className="evidence-passage">
+        <HighlightedText text={citation.text} terms={citation.matched_terms} />
+      </p>
+    </section>
+  );
+}
+
+function Metric({ label, value, wide = false }) {
+  return (
+    <div className={`evidence-metric ${wide ? "wide" : ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -1201,13 +1247,18 @@ function ChatMessage({ message, onOpenCitation }) {
           <div className="citation-list">
             {message.citations.map((citation) => (
               <button
-                className="citation-pill"
+                className={`citation-pill ${evidenceQualityClass(citation.evidence_quality)}`}
                 key={citation.chunk_id ?? `${citation.paper_id}-${citation.page_number}`}
                 onClick={() => onOpenCitation?.(citation)}
+                title={citation.chunk_id ? `Open evidence chunk ${citation.chunk_id}` : "Open evidence"}
                 type="button"
               >
-                {citation.title || citation.paper_id}
-                {citation.page_number ? `, p. ${citation.page_number}` : ""}
+                <span className="citation-main">
+                  {citation.title || citation.paper_id}
+                  {citation.page_number ? `, p. ${citation.page_number}` : ""}
+                </span>
+                {citation.chunk_id ? <span className="citation-chunk">{citation.chunk_id}</span> : null}
+                <span className="citation-quality">{formatEvidenceQuality(citation.evidence_quality)}</span>
               </button>
             ))}
           </div>
@@ -1230,6 +1281,61 @@ function formatDateTime(value) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatEvidenceQuality(quality) {
+  if (quality === "high") return "High";
+  if (quality === "medium") return "Medium";
+  if (quality === "low") return "Low";
+  return "Unknown";
+}
+
+function evidenceQualityClass(quality) {
+  if (quality === "high") return "quality-high";
+  if (quality === "medium") return "quality-medium";
+  if (quality === "low") return "quality-low";
+  return "quality-unknown";
+}
+
+function formatScore(score) {
+  return Number.isFinite(score) ? score.toFixed(2) : "n/a";
+}
+
+function formatRetrievalSources(sources) {
+  return sources?.length ? sources.join(" + ") : "n/a";
+}
+
+function isWeakEvidence(citation) {
+  const score = citation?.rerank_score ?? citation?.score;
+  return citation?.evidence_quality === "low" || citation?.evidence_quality === "unknown" || (Number.isFinite(score) && score < 0.5);
+}
+
+function hasEvidenceMetrics(citation) {
+  return Boolean(
+    Number.isFinite(citation?.score) ||
+      Number.isFinite(citation?.rerank_score) ||
+      Number.isFinite(citation?.cross_encoder_score) ||
+      Number.isFinite(citation?.vector_score) ||
+      Number.isFinite(citation?.keyword_score) ||
+      citation?.retrieval_sources?.length ||
+      citation?.reranker,
+  );
+}
+
+function HighlightedText({ text, terms }) {
+  if (!text) return null;
+  const highlightTerms = Array.from(new Set((terms ?? []).filter(Boolean))).sort((a, b) => b.length - a.length);
+  if (!highlightTerms.length) return text;
+
+  const pattern = new RegExp(`(${highlightTerms.map(escapeRegExp).join("|")})`, "gi");
+  return text.split(pattern).map((part, index) => {
+    const isMatch = highlightTerms.some((term) => term.toLowerCase() === part.toLowerCase());
+    return isMatch ? <mark key={`${part}-${index}`}>{part}</mark> : part;
+  });
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export default App;
