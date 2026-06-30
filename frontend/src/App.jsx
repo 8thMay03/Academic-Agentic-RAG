@@ -98,10 +98,20 @@ function App() {
   async function startChatMode() {
     setMode("chat");
     if (!activeChat) {
-      await createNewChat();
+      setSourceState({ loading: false, error: "", message: "" });
+      setChatState({ loading: false, error: "" });
+      try {
+        const session = await createChatSession("New chat");
+        setActiveChat(session);
+        setQuestion("");
+        setIsSourceModalOpen(false);
+        await refreshChatThreads();
+      } catch (error) {
+        setChatListState({ loading: false, error: error.message });
+      }
       return;
     }
-    setIsSourceModalOpen(activeChat.sources.length === 0);
+    setIsSourceModalOpen(false);
   }
 
   function returnHome() {
