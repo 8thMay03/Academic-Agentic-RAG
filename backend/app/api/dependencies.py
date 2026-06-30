@@ -3,6 +3,7 @@ from app.services.compare_service import CompareService
 from app.services.llm_service import LLMService
 from app.services.pdf_service import PDFService
 from app.services.pdf_index_service import PDFIndexService
+from app.services.rag_service import RAGService
 from app.services.retriever_service import RetrieverService
 from app.services.search_service import SearchService
 from app.services.summary_service import SummaryService
@@ -37,8 +38,14 @@ def get_retriever_service() -> RetrieverService:
     return RetrieverService()
 
 
+def get_rag_service() -> RAGService:
+    return RAGService(get_retriever_service(), get_llm_service())
+
+
 def get_chat_service() -> ChatService:
-    return ChatService(get_retriever_service(), get_llm_service())
+    llm_service = get_llm_service()
+    return ChatService(RAGService(get_retriever_service(), llm_service), llm_service)
+
 
 
 def get_chat_history_store() -> ChatHistoryStore:
