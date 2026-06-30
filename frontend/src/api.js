@@ -17,24 +17,6 @@ async function request(path, options = {}) {
   return payload;
 }
 
-export async function searchPapers({ query, maxResults, sortBy }) {
-  return request("/search", {
-    method: "POST",
-    body: JSON.stringify({
-      query,
-      max_results: maxResults,
-      sort_by: sortBy,
-    }),
-  });
-}
-
-export async function downloadPapers(pdfUrls) {
-  return request("/papers/download", {
-    method: "POST",
-    body: JSON.stringify({ pdf_urls: pdfUrls }),
-  });
-}
-
 export async function listDownloadedPdfs() {
   return request("/papers/pdfs");
 }
@@ -65,29 +47,6 @@ export async function indexDownloadedPdf(filename) {
   });
 }
 
-export async function runResearch({ query, maxResults }) {
-  return request("/research", {
-    method: "POST",
-    body: JSON.stringify({
-      query,
-      max_results: maxResults,
-    }),
-  });
-}
-
-export async function chatWithPaper({ question, chatId, paperIds, topK, scoreThreshold }) {
-  return request("/chat", {
-    method: "POST",
-    body: JSON.stringify({
-      question,
-      chat_id: chatId,
-      paper_ids: paperIds,
-      top_k: topK,
-      score_threshold: scoreThreshold,
-    }),
-  });
-}
-
 export async function streamChatWithPaper({
   question,
   chatId,
@@ -115,7 +74,7 @@ export async function streamChatWithPaper({
     throw new Error(Array.isArray(message) ? JSON.stringify(message) : message);
   }
   if (!response.body) {
-    throw new Error("Streaming response is not available in this browser.");
+    throw new Error("Trình duyệt không hỗ trợ streaming.");
   }
 
   const reader = response.body.getReader();
@@ -161,10 +120,6 @@ export async function streamChatWithPaper({
   }
 
   return { answer, citations };
-}
-
-export async function getChatHistory(paperId) {
-  return request(`/chat/history/${encodeURIComponent(paperId)}`);
 }
 
 export async function listChatThreads() {
