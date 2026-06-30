@@ -1243,7 +1243,7 @@ button:disabled {
 }
 
 .paper-chat-shell .chat-thread-card {
-  grid-template-columns: minmax(0, 1fr) 34px 34px;
+  grid-template-columns: minmax(0, 1fr) 34px;
   border: 1px solid #d6dee8;
   border-radius: 12px;
   background: #ffffff;
@@ -1833,7 +1833,7 @@ button:disabled {
 
 .chat-thread-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px 34px;
+  grid-template-columns: minmax(0, 1fr) 34px;
   align-items: stretch;
   border: 1px solid #d4dce5;
   background: #ffffff;

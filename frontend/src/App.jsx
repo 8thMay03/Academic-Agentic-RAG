@@ -447,7 +447,6 @@ function App() {
               key={thread.chat_id}
               onDelete={() => setDeleteCandidate(thread)}
               onClick={() => openChat(thread.chat_id)}
-              onRename={() => openRenameDialog(thread)}
               thread={thread}
             />
           ))}
@@ -1119,7 +1118,7 @@ function RenameChatDialog({ onCancel, onChange, onSubmit, renaming, title }) {
   );
 }
 
-function ChatThreadCard({ active, onClick, onDelete, onRename, thread }) {
+function ChatThreadCard({ active, onClick, onDelete, thread }) {
   return (
     <div className={`chat-thread-card ${active ? "active" : ""}`}>
       <button className="chat-thread-open" onClick={onClick} type="button">
@@ -1129,9 +1128,6 @@ function ChatThreadCard({ active, onClick, onDelete, onRename, thread }) {
         <span className="chat-thread-meta">
           {thread.source_count} sources · {thread.message_count} messages · {formatDateTime(thread.updated_at)}
         </span>
-      </button>
-      <button aria-label={`Rename ${thread.title}`} className="chat-thread-edit" onClick={onRename} type="button">
-        <Pencil size={15} aria-hidden="true" />
       </button>
       <button aria-label={`Delete ${thread.title}`} className="chat-thread-delete" onClick={onDelete} type="button">
         <Trash2 size={15} aria-hidden="true" />
