@@ -13,11 +13,19 @@ class FakeChatService:
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.65,
+        chat_history: list[ChatHistoryMessage] | None = None,
     ) -> tuple[str, list[Citation]]:
         assert question == "What is the method?"
         assert paper_ids == ["paper-1"]
         assert top_k == 3
         assert score_threshold == 0.7
+        assert chat_history == [
+            ChatHistoryMessage(
+                role="user",
+                content="Previous question?",
+                created_at="2026-01-01T00:00:00+00:00",
+            )
+        ]
         return (
             "It uses planning for retrieval decisions (p. 3).",
             [
@@ -28,6 +36,12 @@ class FakeChatService:
                     page=3,
                     chunk_id="paper-1:p3:c0",
                     text="Agentic RAG uses planning.",
+                    score=0.91,
+                    rerank_score=0.93,
+                    vector_score=0.9,
+                    keyword_score=1.0,
+                    retrieval_sources=["keyword", "vector"],
+                    evidence_quality="high",
                 )
             ],
         )
@@ -38,11 +52,19 @@ class FakeChatService:
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.65,
+        chat_history: list[ChatHistoryMessage] | None = None,
     ):
         assert question == "What is the method?"
         assert paper_ids == ["paper-1"]
         assert top_k == 3
         assert score_threshold == 0.7
+        assert chat_history == [
+            ChatHistoryMessage(
+                role="user",
+                content="Previous question?",
+                created_at="2026-01-01T00:00:00+00:00",
+            )
+        ]
 
         async def token_stream():
             for token in ["It ", "uses ", "planning."]:
@@ -58,6 +80,12 @@ class FakeChatService:
                     page=3,
                     chunk_id="paper-1:p3:c0",
                     text="Agentic RAG uses planning.",
+                    score=0.91,
+                    rerank_score=0.93,
+                    vector_score=0.9,
+                    keyword_score=1.0,
+                    retrieval_sources=["keyword", "vector"],
+                    evidence_quality="high",
                 )
             ],
         )
@@ -169,6 +197,12 @@ def test_chat_with_papers_returns_answer_and_citations() -> None:
                 "page": 3,
                 "chunk_id": "paper-1:p3:c0",
                 "text": "Agentic RAG uses planning.",
+                "score": 0.91,
+                "rerank_score": 0.93,
+                "vector_score": 0.9,
+                "keyword_score": 1.0,
+                "retrieval_sources": ["keyword", "vector"],
+                "evidence_quality": "high",
             }
         ],
     }

@@ -1085,6 +1085,20 @@ function PaperPreviewOverlay({ onClose, source }) {
         {source.citation?.text ? (
           <div className="citation-preview">
             <strong>Referenced passage{pageNumber ? ` on page ${pageNumber}` : ""}</strong>
+            <div className="citation-preview-meta">
+              {source.citation.chunk_id ? <span>{source.citation.chunk_id}</span> : null}
+              {source.citation.evidence_quality ? (
+                <span className={`evidence-badge ${evidenceQualityClass(source.citation.evidence_quality)}`}>
+                  {formatEvidenceQuality(source.citation.evidence_quality)}
+                </span>
+              ) : null}
+              {Number.isFinite(source.citation.rerank_score ?? source.citation.score) ? (
+                <span>score {formatScore(source.citation.rerank_score ?? source.citation.score)}</span>
+              ) : null}
+              {source.citation.retrieval_sources?.length ? (
+                <span>{source.citation.retrieval_sources.join(" + ")}</span>
+              ) : null}
+            </div>
             <p>{source.citation.text}</p>
           </div>
         ) : null}
@@ -1201,13 +1215,18 @@ function ChatMessage({ message, onOpenCitation }) {
           <div className="citation-list">
             {message.citations.map((citation) => (
               <button
-                className="citation-pill"
+                className={`citation-pill ${evidenceQualityClass(citation.evidence_quality)}`}
                 key={citation.chunk_id ?? `${citation.paper_id}-${citation.page_number}`}
                 onClick={() => onOpenCitation?.(citation)}
+                title={citation.chunk_id ? `Open evidence chunk ${citation.chunk_id}` : "Open evidence"}
                 type="button"
               >
-                {citation.title || citation.paper_id}
-                {citation.page_number ? `, p. ${citation.page_number}` : ""}
+                <span className="citation-main">
+                  {citation.title || citation.paper_id}
+                  {citation.page_number ? `, p. ${citation.page_number}` : ""}
+                </span>
+                {citation.chunk_id ? <span className="citation-chunk">{citation.chunk_id}</span> : null}
+                <span className="citation-quality">{formatEvidenceQuality(citation.evidence_quality)}</span>
               </button>
             ))}
           </div>
@@ -1230,6 +1249,24 @@ function formatDateTime(value) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatEvidenceQuality(quality) {
+  if (quality === "high") return "High";
+  if (quality === "medium") return "Medium";
+  if (quality === "low") return "Low";
+  return "Unknown";
+}
+
+function evidenceQualityClass(quality) {
+  if (quality === "high") return "quality-high";
+  if (quality === "medium") return "quality-medium";
+  if (quality === "low") return "quality-low";
+  return "quality-unknown";
+}
+
+function formatScore(score) {
+  return Number.isFinite(score) ? score.toFixed(2) : "n/a";
 }
 
 export default App;

@@ -1,11 +1,14 @@
 from collections.abc import AsyncIterator
 
+from app.models.chat import ChatHistoryMessage
 from app.models.citation import Citation
 from app.services.llm_service import LLMService
 from app.services.retriever_service import RetrieverService
 
 
 UNKNOWN_ANSWER = "I don't know"
+MAX_HISTORY_MESSAGES = 6
+MAX_HISTORY_CHARS = 2000
 
 
 class ChatService:
@@ -23,8 +26,9 @@ class ChatService:
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.65,
+        chat_history: list[ChatHistoryMessage] | None = None,
     ) -> tuple[str, list[Citation]]:
-        prompt, citations = await self._prepare_answer(question, paper_ids, top_k, score_threshold)
+        prompt, citations = await self._prepare_answer(question, paper_ids, top_k, score_threshold, chat_history)
         if not prompt:
             return UNKNOWN_ANSWER, []
 
@@ -40,8 +44,9 @@ class ChatService:
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.65,
+        chat_history: list[ChatHistoryMessage] | None = None,
     ) -> tuple[AsyncIterator[str], list[Citation]]:
-        prompt, citations = await self._prepare_answer(question, paper_ids, top_k, score_threshold)
+        prompt, citations = await self._prepare_answer(question, paper_ids, top_k, score_threshold, chat_history)
         if not prompt:
             return self._single_token_stream(UNKNOWN_ANSWER), []
         return self._llm_service.stream_complete(prompt), citations
@@ -52,9 +57,11 @@ class ChatService:
         paper_ids: list[str] | None,
         top_k: int,
         score_threshold: float | None,
+        chat_history: list[ChatHistoryMessage] | None = None,
     ) -> tuple[str | None, list[Citation]]:
+        retrieval_query = self._build_retrieval_query(question, chat_history)
         retrieved_chunks = await self._retriever_service.retrieve(
-            question,
+            retrieval_query,
             top_k=top_k,
             score_threshold=score_threshold,
             paper_ids=paper_ids,
@@ -63,7 +70,7 @@ class ChatService:
 
         if not filtered_chunks and score_threshold is not None and score_threshold > 0:
             retrieved_chunks = await self._retriever_service.retrieve(
-                question,
+                retrieval_query,
                 top_k=top_k,
                 score_threshold=None,
                 paper_ids=paper_ids,
@@ -73,7 +80,7 @@ class ChatService:
         if not filtered_chunks:
             return None, []
 
-        return self._build_prompt(question, filtered_chunks), self._citations(filtered_chunks)
+        return self._build_prompt(question, filtered_chunks, chat_history), self._citations(filtered_chunks)
 
     @staticmethod
     async def _single_token_stream(token: str) -> AsyncIterator[str]:
@@ -91,7 +98,39 @@ class ChatService:
         ]
 
     @staticmethod
-    def _build_prompt(question: str, chunks: list[dict]) -> str:
+    def _build_retrieval_query(question: str, chat_history: list[ChatHistoryMessage] | None) -> str:
+        conversation_context = ChatService._conversation_context(chat_history)
+        if not conversation_context:
+            return question
+        return (
+            "Recent conversation for resolving follow-up references:\n"
+            f"{conversation_context}\n\n"
+            f"Current question: {question}"
+        )
+
+    @staticmethod
+    def _conversation_context(chat_history: list[ChatHistoryMessage] | None) -> str:
+        if not chat_history:
+            return ""
+
+        lines = []
+        for message in chat_history[-MAX_HISTORY_MESSAGES:]:
+            role = "User" if message.role == "user" else "Assistant"
+            content = " ".join(message.content.split())
+            if content:
+                lines.append(f"{role}: {content}")
+
+        context = "\n".join(lines)
+        if len(context) <= MAX_HISTORY_CHARS:
+            return context
+        return context[-MAX_HISTORY_CHARS:].lstrip()
+
+    @staticmethod
+    def _build_prompt(
+        question: str,
+        chunks: list[dict],
+        chat_history: list[ChatHistoryMessage] | None = None,
+    ) -> str:
         context_blocks = []
         for index, chunk in enumerate(chunks, start=1):
             citation = chunk.get("citation") or {}
@@ -114,12 +153,23 @@ class ChatService:
             )
 
         context_text = "\n\n".join(context_blocks)
+        conversation_context = ChatService._conversation_context(chat_history)
+        conversation_section = (
+            "Recent conversation:\n"
+            f"{conversation_context}\n\n"
+            if conversation_context
+            else ""
+        )
         return (
             "Answer the question using only the retrieved paper context below.\n"
+            "Use the recent conversation only to resolve pronouns, ellipses, and follow-up references.\n"
             "If the context does not contain enough information to answer, respond exactly:\n"
             f"{UNKNOWN_ANSWER}\n\n"
             "Do not use outside knowledge. Do not guess. Keep the answer concise.\n"
-            "When useful, cite context using page numbers in parentheses, e.g. (p. 3).\n\n"
+            "Every factual claim supported by paper context must end with one or more exact chunk_id citations "
+            "in square brackets, e.g. [paper-1:p3:c0].\n"
+            "Use only chunk_id values that appear in the retrieved context. Do not invent citation ids.\n\n"
+            f"{conversation_section}"
             f"Question: {question}\n\n"
             "Retrieved context:\n"
             f"{context_text}"
@@ -152,7 +202,35 @@ class ChatService:
                     page=page_number,
                     chunk_id=chunk_id,
                     text=citation.get("text") or chunk.get("text"),
+                    score=ChatService._optional_float(chunk.get("score")),
+                    rerank_score=ChatService._optional_float(chunk.get("rerank_score")),
+                    vector_score=ChatService._optional_float(chunk.get("vector_score")),
+                    keyword_score=ChatService._optional_float(chunk.get("keyword_score")),
+                    retrieval_sources=list(chunk.get("retrieval_sources") or []),
+                    evidence_quality=ChatService._evidence_quality(chunk),
                 )
             )
 
         return citations
+
+    @staticmethod
+    def _optional_float(value: object) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _evidence_quality(chunk: dict) -> str:
+        score = ChatService._optional_float(chunk.get("rerank_score"))
+        if score is None:
+            score = ChatService._optional_float(chunk.get("score"))
+        if score is None:
+            return "unknown"
+        if score >= 0.75:
+            return "high"
+        if score >= 0.5:
+            return "medium"
+        return "low"

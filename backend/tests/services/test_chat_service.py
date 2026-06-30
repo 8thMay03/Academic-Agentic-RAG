@@ -1,5 +1,6 @@
 import pytest
 
+from app.models.chat import ChatHistoryMessage
 from app.services.chat_service import UNKNOWN_ANSWER, ChatService
 
 
@@ -83,6 +84,10 @@ RETRIEVED_CHUNK = {
         "chunk_id": "paper-1:p3:c0",
     },
     "score": 0.91,
+    "rerank_score": 0.93,
+    "vector_score": 0.89,
+    "keyword_score": 1.0,
+    "retrieval_sources": ["keyword", "vector"],
     "citation": {
         "paper_id": "paper-1",
         "title": "Agentic RAG",
@@ -134,8 +139,39 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert citations[0].paper_id == "paper-1"
     assert citations[0].page_number == 3
     assert citations[0].chunk_id == "paper-1:p3:c0"
+    assert citations[0].evidence_quality == "high"
+    assert citations[0].retrieval_sources == ["keyword", "vector"]
     assert "If the context does not contain enough information" in llm.prompts[0]
     assert "I don't know" in llm.prompts[0]
+    assert "Every factual claim supported by paper context" in llm.prompts[0]
+    assert "[paper-1:p3:c0]" in llm.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_uses_recent_history_for_follow_up_retrieval_and_prompt() -> None:
+    retriever = FakeRetrieverService([RETRIEVED_CHUNK])
+    llm = FakeLLMService("It uses planning for retrieval decisions [paper-1:p3:c0].")
+    service = ChatService(retriever, llm)
+    history = [
+        ChatHistoryMessage(
+            role="user",
+            content="How does Agentic RAG retrieve evidence?",
+            created_at="2026-01-01T00:00:00+00:00",
+        ),
+        ChatHistoryMessage(
+            role="assistant",
+            content="It uses planning.",
+            created_at="2026-01-01T00:00:01+00:00",
+        ),
+    ]
+
+    await service.answer("What are its retrieval decisions?", chat_history=history)
+
+    assert "Recent conversation for resolving follow-up references" in retriever.query
+    assert "How does Agentic RAG retrieve evidence?" in retriever.query
+    assert "Current question: What are its retrieval decisions?" in retriever.query
+    assert "Recent conversation:" in llm.prompts[0]
+    assert "Use the recent conversation only to resolve" in llm.prompts[0]
 
 
 @pytest.mark.asyncio

@@ -1721,11 +1721,66 @@ button:disabled {
 .citation-pill {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
+  max-width: min(100%, 560px);
   border: 1px solid #c8d4dc;
   background: #f4f7fa;
   color: #405063;
   padding: 4px 7px;
   font-size: 0.76rem;
+}
+
+.citation-main,
+.citation-chunk {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.citation-main {
+  max-width: 220px;
+}
+
+.citation-chunk {
+  max-width: 170px;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.7rem;
+}
+
+.citation-quality,
+.evidence-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.quality-high .citation-quality,
+.evidence-badge.quality-high {
+  background: #dff4e8;
+  color: #17623d;
+}
+
+.quality-medium .citation-quality,
+.evidence-badge.quality-medium {
+  background: #fff2cf;
+  color: #7a4b00;
+}
+
+.quality-low .citation-quality,
+.evidence-badge.quality-low {
+  background: #ffe3dc;
+  color: #8a2b1d;
+}
+
+.quality-unknown .citation-quality,
+.evidence-badge.quality-unknown {
+  background: #e8edf3;
+  color: #475569;
 }
 
 .citation-pill:hover {
@@ -2340,6 +2395,24 @@ button:disabled {
   color: #17202a;
   font-size: 0.86rem;
   line-height: 1.35;
+}
+
+.citation-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.citation-preview-meta span:not(.evidence-badge) {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .citation-preview p {
