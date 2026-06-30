@@ -2426,6 +2426,19 @@ button:disabled {
   line-height: 1.1;
 }
 
+.evidence-missing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #526173;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .citation-preview-meta {
   display: flex;
   flex-wrap: wrap;

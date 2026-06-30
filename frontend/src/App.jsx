@@ -1104,6 +1104,7 @@ function PaperPreviewOverlay({ onClose, source }) {
 function EvidencePanel({ citation, pageNumber }) {
   const score = citation.rerank_score ?? citation.score;
   const hasWeakEvidence = isWeakEvidence(citation);
+  const hasMetrics = hasEvidenceMetrics(citation);
 
   return (
     <section className="evidence-panel" aria-label="Evidence details">
@@ -1125,15 +1126,22 @@ function EvidencePanel({ citation, pageNumber }) {
         ) : null}
       </div>
 
-      <div className="evidence-metrics" aria-label="Evidence quality metrics">
-        <Metric label="Score" value={formatScore(score)} />
-        <Metric label="Rerank" value={formatScore(citation.rerank_score)} />
-        <Metric label="CrossEnc" value={formatScore(citation.cross_encoder_score)} />
-        <Metric label="Vector" value={formatScore(citation.vector_score)} />
-        <Metric label="Keyword" value={formatScore(citation.keyword_score)} />
-        <Metric label="Source" value={formatRetrievalSources(citation.retrieval_sources)} wide />
-        <Metric label="Model" value={citation.reranker ?? "n/a"} wide />
-      </div>
+      {hasMetrics ? (
+        <div className="evidence-metrics" aria-label="Evidence quality metrics">
+          <Metric label="Score" value={formatScore(score)} />
+          <Metric label="Rerank" value={formatScore(citation.rerank_score)} />
+          <Metric label="CrossEnc" value={formatScore(citation.cross_encoder_score)} />
+          <Metric label="Vector" value={formatScore(citation.vector_score)} />
+          <Metric label="Keyword" value={formatScore(citation.keyword_score)} />
+          <Metric label="Source" value={formatRetrievalSources(citation.retrieval_sources)} wide />
+          <Metric label="Model" value={citation.reranker ?? "n/a"} wide />
+        </div>
+      ) : (
+        <div className="evidence-missing">
+          <AlertTriangle size={15} aria-hidden="true" />
+          Evidence scores were not stored for this older citation.
+        </div>
+      )}
 
       <p className="evidence-passage">
         <HighlightedText text={citation.text} terms={citation.matched_terms} />
@@ -1311,6 +1319,18 @@ function formatRetrievalSources(sources) {
 function isWeakEvidence(citation) {
   const score = citation?.rerank_score ?? citation?.score;
   return citation?.evidence_quality === "low" || citation?.evidence_quality === "unknown" || (Number.isFinite(score) && score < 0.5);
+}
+
+function hasEvidenceMetrics(citation) {
+  return Boolean(
+    Number.isFinite(citation?.score) ||
+      Number.isFinite(citation?.rerank_score) ||
+      Number.isFinite(citation?.cross_encoder_score) ||
+      Number.isFinite(citation?.vector_score) ||
+      Number.isFinite(citation?.keyword_score) ||
+      citation?.retrieval_sources?.length ||
+      citation?.reranker,
+  );
 }
 
 function HighlightedText({ text, terms }) {
