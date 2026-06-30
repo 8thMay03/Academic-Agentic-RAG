@@ -39,10 +39,39 @@ export async function listDownloadedPdfs() {
   return request("/papers/pdfs");
 }
 
+export async function uploadLocalPdfs(files) {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
+  }
+
+  const response = await fetch(`${API_BASE_URL}/papers/pdfs/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = payload?.detail ?? `Request failed with status ${response.status}`;
+    throw new Error(Array.isArray(message) ? JSON.stringify(message) : message);
+  }
+  return payload;
+}
+
 export async function indexDownloadedPdf(filename) {
   return request("/papers/pdfs/index", {
     method: "POST",
     body: JSON.stringify({ filename }),
+  });
+}
+
+export async function runResearch({ query, maxResults }) {
+  return request("/research", {
+    method: "POST",
+    body: JSON.stringify({
+      query,
+      max_results: maxResults,
+    }),
   });
 }
 

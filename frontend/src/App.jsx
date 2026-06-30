@@ -1,8 +1,11 @@
 import {
   ArrowDownToLine,
+  ArrowLeft,
   Bot,
+  BrainCircuit,
   CalendarDays,
   FileText,
+  Home,
   Library,
   MessageSquare,
   Pencil,
@@ -11,6 +14,7 @@ import {
   Search,
   Send,
   Trash2,
+  UploadCloud,
   User,
   X,
 } from "lucide-react";
@@ -20,16 +24,16 @@ import {
   clearChatHistory,
   createChatSession,
   deleteChatSession,
-  downloadPapers,
   getChatSession,
   getPdfFileUrl,
   indexDownloadedPdf,
   listChatThreads,
   listDownloadedPdfs,
   removeChatSource,
-  searchPapers,
+  runResearch,
   streamChatWithPaper,
   updateChatSessionTitle,
+  uploadLocalPdfs,
 } from "./api";
 
 const DEFAULT_QUERY = "Agentic RAG";
@@ -57,16 +61,15 @@ function sourceFromPdf(pdf, paperId = paperIdFromFilename(pdf.filename)) {
 }
 
 function App() {
-  const [query, setQuery] = useState(DEFAULT_QUERY);
-  const [maxResults, setMaxResults] = useState(5);
-  const [sortBy, setSortBy] = useState("submittedDate");
-  const [onlinePapers, setOnlinePapers] = useState([]);
+  const [mode, setMode] = useState("home");
+  const [researchQuery, setResearchQuery] = useState(DEFAULT_QUERY);
+  const [researchMaxResults, setResearchMaxResults] = useState(5);
+  const [researchResult, setResearchResult] = useState(null);
   const [downloadedPdfs, setDownloadedPdfs] = useState([]);
   const [chatThreads, setChatThreads] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
   const [question, setQuestion] = useState("");
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
-  const [sourceTab, setSourceTab] = useState("local");
   const [paperOverlay, setPaperOverlay] = useState(null);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [renameCandidate, setRenameCandidate] = useState(null);
@@ -74,9 +77,10 @@ function App() {
 
   const [chatListState, setChatListState] = useState({ loading: false, error: "" });
   const [pdfListState, setPdfListState] = useState({ loading: false, error: "" });
-  const [searchState, setSearchState] = useState({ loading: false, error: "" });
   const [sourceState, setSourceState] = useState({ loading: false, error: "", message: "" });
   const [chatState, setChatState] = useState({ loading: false, error: "" });
+  const [uploadState, setUploadState] = useState({ loading: false, error: "", message: "" });
+  const [researchState, setResearchState] = useState({ loading: false, error: "" });
 
   const sourceIds = useMemo(() => new Set((activeChat?.sources ?? []).map((source) => source.paper_id)), [activeChat]);
 
@@ -84,6 +88,21 @@ function App() {
     void refreshChatThreads();
     void refreshDownloadedPdfs();
   }, []);
+
+  async function startChatMode() {
+    setMode("chat");
+    if (!activeChat) {
+      await createNewChat();
+      return;
+    }
+    setIsSourceModalOpen(activeChat.sources.length === 0);
+  }
+
+  function returnHome() {
+    setMode("home");
+    setIsSourceModalOpen(false);
+    setPaperOverlay(null);
+  }
 
   async function refreshChatThreads() {
     setChatListState({ loading: true, error: "" });
@@ -206,38 +225,35 @@ function App() {
     }
   }
 
-  async function ingestOnlinePaper(paper) {
-    if (!paper.pdfUrl) {
-      setSourceState({ loading: false, error: "This paper does not have a PDF URL.", message: "" });
+  async function uploadPdfFiles(files) {
+    const pdfFiles = Array.from(files ?? []).filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
+    if (!pdfFiles.length) {
+      setUploadState({ loading: false, error: "Please choose at least one PDF file.", message: "" });
       return;
     }
 
-    setSourceState({ loading: true, error: "", message: "Downloading and indexing PDF..." });
+    setUploadState({ loading: true, error: "", message: `Uploading ${pdfFiles.length} PDF${pdfFiles.length > 1 ? "s" : ""}...` });
+    setSourceState({ loading: true, error: "", message: "" });
     try {
       const chat = await ensureActiveChat();
-      const downloadResponse = await downloadPapers([paper.pdfUrl]);
-      const downloadedPath = downloadResponse.files?.[0];
-      if (!downloadedPath) {
-        throw new Error(downloadResponse.errors?.[0]?.error ?? "PDF download failed.");
+      const uploadedPdfs = await uploadLocalPdfs(pdfFiles);
+      let session = chat;
+      for (const pdf of uploadedPdfs) {
+        const indexResponse = await indexDownloadedPdf(pdf.filename);
+        session = await addChatSource(session.chat_id, sourceFromPdf(pdf, indexResponse.paper_id));
       }
 
-      await refreshDownloadedPdfs();
-      const filename = downloadedPath.split("/").pop();
-      const indexResponse = await indexDownloadedPdf(filename);
-      const session = await addChatSource(chat.chat_id, {
-        paper_id: indexResponse.paper_id,
-        title: paper.title,
-        filename,
-        path: downloadedPath,
-      });
       setActiveChat(session);
-      setSourceState({
+      setUploadState({
         loading: false,
         error: "",
-        message: `${paper.title} added to this chat.`,
+        message: `${uploadedPdfs.length} PDF${uploadedPdfs.length > 1 ? "s" : ""} uploaded and added to this chat.`,
       });
+      setSourceState({ loading: false, error: "", message: "" });
+      await refreshDownloadedPdfs();
       await refreshChatThreads();
     } catch (error) {
+      setUploadState({ loading: false, error: error.message, message: "" });
       setSourceState({ loading: false, error: error.message, message: "" });
     }
   }
@@ -255,15 +271,22 @@ function App() {
     }
   }
 
-  async function handleSearch(event) {
+  async function handleResearch(event) {
     event.preventDefault();
-    setSearchState({ loading: true, error: "" });
+    const trimmedQuery = researchQuery.trim();
+    if (!trimmedQuery) return;
+
+    setResearchState({ loading: true, error: "" });
+    setResearchResult(null);
     try {
-      const response = await searchPapers({ query, maxResults, sortBy });
-      setOnlinePapers((response.papers ?? []).map(normalizePaper));
-      setSearchState({ loading: false, error: "" });
+      const response = await runResearch({ query: trimmedQuery, maxResults: researchMaxResults });
+      setResearchResult({
+        ...response,
+        papers: (response.papers ?? []).map(normalizePaper),
+      });
+      setResearchState({ loading: false, error: "" });
     } catch (error) {
-      setSearchState({ loading: false, error: error.message });
+      setResearchState({ loading: false, error: error.message });
     }
   }
 
@@ -358,6 +381,25 @@ function App() {
     }
   }
 
+  if (mode === "home") {
+    return <HomeScreen onStartChat={startChatMode} onStartResearch={() => setMode("research")} />;
+  }
+
+  if (mode === "research") {
+    return (
+      <ResearchWorkspace
+        maxResults={researchMaxResults}
+        onBack={returnHome}
+        onChangeMaxResults={setResearchMaxResults}
+        onChangeQuery={setResearchQuery}
+        onSubmit={handleResearch}
+        query={researchQuery}
+        result={researchResult}
+        state={researchState}
+      />
+    );
+  }
+
   return (
     <main className="research-shell">
       <aside className="chat-rail" aria-label="Chats">
@@ -366,9 +408,14 @@ function App() {
             <h1>AI Research Assistant</h1>
             <p>{chatThreads.length ? `${chatThreads.length} chats` : "No chats yet"}</p>
           </div>
-          <button aria-label="New chat" onClick={createNewChat} type="button">
-            <Plus size={18} aria-hidden="true" />
-          </button>
+          <div className="rail-actions">
+            <button aria-label="Home" onClick={returnHome} type="button">
+              <Home size={18} aria-hidden="true" />
+            </button>
+            <button aria-label="New chat" onClick={createNewChat} type="button">
+              <Plus size={18} aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         {chatListState.error ? <div className="error-box compact-box">{chatListState.error}</div> : null}
@@ -417,24 +464,14 @@ function App() {
       {isSourceModalOpen ? (
         <AddSourcesModal
           downloadedPdfs={downloadedPdfs}
-          maxResults={maxResults}
           onAddLocalPdf={addLocalPdfToChat}
           onClose={() => setIsSourceModalOpen(false)}
-          onIngestOnlinePaper={ingestOnlinePaper}
           onRefreshPdfs={refreshDownloadedPdfs}
-          onSearch={handleSearch}
-          onlinePapers={onlinePapers}
+          onUploadPdfs={uploadPdfFiles}
           pdfListState={pdfListState}
-          query={query}
-          searchState={searchState}
-          setMaxResults={setMaxResults}
-          setQuery={setQuery}
-          setSortBy={setSortBy}
-          sortBy={sortBy}
           sourceIds={sourceIds}
           sourceState={sourceState}
-          sourceTab={sourceTab}
-          setSourceTab={setSourceTab}
+          uploadState={uploadState}
         />
       ) : null}
 
@@ -462,6 +499,167 @@ function App() {
         />
       ) : null}
     </main>
+  );
+}
+
+function HomeScreen({ onStartChat, onStartResearch }) {
+  return (
+    <main className="home-shell">
+      <section className="home-panel" aria-labelledby="home-title">
+        <div className="home-heading">
+          <span className="product-mark">
+            <BrainCircuit size={20} aria-hidden="true" />
+            AI Research Assistant
+          </span>
+          <h1 id="home-title">Chọn luồng làm việc</h1>
+          <p>Tải PDF để hỏi đáp theo tài liệu, hoặc nhập query để agent thực hiện luồng nghiên cứu.</p>
+        </div>
+
+        <div className="mode-grid">
+          <button className="mode-card" onClick={onStartChat} type="button">
+            <span className="mode-icon">
+              <MessageSquare size={26} aria-hidden="true" />
+            </span>
+            <span className="mode-title">Chat với paper</span>
+            <span className="mode-copy">Tải local PDF lên, index tài liệu, rồi hỏi đáp với agent dựa trên nội dung paper.</span>
+            <span className="mode-action">
+              <UploadCloud size={17} aria-hidden="true" />
+              Tải PDF
+            </span>
+          </button>
+
+          <button className="mode-card research" onClick={onStartResearch} type="button">
+            <span className="mode-icon">
+              <Search size={26} aria-hidden="true" />
+            </span>
+            <span className="mode-title">Nghiên cứu</span>
+            <span className="mode-copy">Nhập query để agent tìm paper, tổng hợp, so sánh và trả về kết quả nghiên cứu.</span>
+            <span className="mode-action">
+              <BrainCircuit size={17} aria-hidden="true" />
+              Bắt đầu nghiên cứu
+            </span>
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ResearchWorkspace({ maxResults, onBack, onChangeMaxResults, onChangeQuery, onSubmit, query, result, state }) {
+  return (
+    <main className="research-mode-shell">
+      <header className="mode-header">
+        <button className="secondary-action" onClick={onBack} type="button">
+          <ArrowLeft size={17} aria-hidden="true" />
+          Trang chủ
+        </button>
+        <div>
+          <h1>Nghiên cứu</h1>
+          <p>Nhập query để agent chạy workflow nghiên cứu và trả kết quả tổng hợp.</p>
+        </div>
+      </header>
+
+      <section className="research-workspace" aria-label="Research workflow">
+        <form className="research-query-panel" onSubmit={onSubmit}>
+          <div className="research-input-row">
+            <Search size={19} aria-hidden="true" />
+            <input
+              onChange={(event) => onChangeQuery(event.target.value)}
+              placeholder="Agentic RAG"
+              value={query}
+            />
+            <label>
+              Results
+              <input
+                max="20"
+                min="1"
+                onChange={(event) => onChangeMaxResults(Number(event.target.value))}
+                type="number"
+                value={maxResults}
+              />
+            </label>
+            <button disabled={state.loading || !query.trim()} type="submit">
+              <BrainCircuit size={17} aria-hidden="true" />
+              {state.loading ? "Đang nghiên cứu" : "Chạy nghiên cứu"}
+            </button>
+          </div>
+        </form>
+
+        {state.error ? <div className="error-box">{state.error}</div> : null}
+
+        {state.loading ? (
+          <div className="research-loading">
+            <BrainCircuit size={24} aria-hidden="true" />
+            <span>Agent đang tìm paper, phân tích và tổng hợp kết quả...</span>
+          </div>
+        ) : null}
+
+        {!result && !state.loading ? (
+          <div className="empty-state research-empty">
+            <Search size={26} aria-hidden="true" />
+            <span>Kết quả nghiên cứu sẽ xuất hiện ở đây.</span>
+          </div>
+        ) : null}
+
+        {result ? (
+          <div className="research-results">
+            <div className="section-title-row prominent">
+              <div>
+                <h2>Results for "{result.query}"</h2>
+                <p>{result.papers.length ? `${result.papers.length} papers found` : "No papers returned"}</p>
+              </div>
+            </div>
+
+            {result.summary ? <ResearchTextBlock title="Summary" content={result.summary} /> : null}
+            {result.comparison ? <ResearchTextBlock title="Comparison" content={result.comparison} /> : null}
+            {result.report ? <ResearchTextBlock title="Report" content={result.report} /> : null}
+
+            <section className="paper-result-grid" aria-label="Research papers">
+              {result.papers.map((paper) => (
+                <ResearchPaperCard key={paper.paper_id} paper={paper} />
+              ))}
+            </section>
+          </div>
+        ) : null}
+      </section>
+    </main>
+  );
+}
+
+function ResearchTextBlock({ title, content }) {
+  return (
+    <section className="research-text-block">
+      <h3>{title}</h3>
+      <p>{content}</p>
+    </section>
+  );
+}
+
+function ResearchPaperCard({ paper }) {
+  const paperUrl = paper.arxivUrl ?? paper.url;
+
+  return (
+    <article className="research-paper-card">
+      <h3>{paper.title}</h3>
+      <div className="paper-meta">
+        <CalendarDays size={14} aria-hidden="true" />
+        {paper.published}
+      </div>
+      <p className="author-line">{paper.authors?.join(", ") || "Unknown authors"}</p>
+      {paper.abstract ? <p className="paper-abstract">{paper.abstract}</p> : null}
+      <div className="paper-links">
+        {paperUrl ? (
+          <a href={paperUrl} rel="noreferrer" target="_blank">
+            Paper
+          </a>
+        ) : null}
+        {paper.pdfUrl ? (
+          <a href={paper.pdfUrl} rel="noreferrer" target="_blank">
+            PDF
+          </a>
+        ) : null}
+      </div>
+    </article>
   );
 }
 
@@ -515,7 +713,7 @@ function ChatWorkspace({
           </button>
           <button className="primary-action" onClick={onAddSources} type="button">
             <Plus size={17} aria-hidden="true" />
-            Add sources
+            Add PDFs
           </button>
         </div>
       </header>
@@ -536,7 +734,7 @@ function ChatWorkspace({
         ) : (
           <button className="source-empty-button" onClick={onAddSources} type="button">
             <Library size={18} aria-hidden="true" />
-            Add local PDFs or web papers
+            Upload or choose local PDFs
           </button>
         )}
       </section>
@@ -588,118 +786,77 @@ function ChatWorkspace({
 
 function AddSourcesModal({
   downloadedPdfs,
-  maxResults,
   onAddLocalPdf,
   onClose,
-  onIngestOnlinePaper,
   onRefreshPdfs,
-  onSearch,
-  onlinePapers,
+  onUploadPdfs,
   pdfListState,
-  query,
-  searchState,
-  setMaxResults,
-  setQuery,
-  setSortBy,
-  sortBy,
   sourceIds,
   sourceState,
-  sourceTab,
-  setSourceTab,
+  uploadState,
 }) {
   return (
     <div className="overlay-backdrop" role="dialog" aria-modal="true" aria-label="Add sources">
       <section className="sources-modal">
         <header className="modal-header">
           <div>
-            <h2>Add sources</h2>
-            <p>Attach local PDFs or ingest web papers into the current chat.</p>
+            <h2>Add local PDFs</h2>
+            <p>Upload paper PDFs, attach them to this chat, then ask grounded questions.</p>
           </div>
           <button aria-label="Close" onClick={onClose} type="button">
             <X size={18} aria-hidden="true" />
           </button>
         </header>
 
-        <div className="tabs" role="tablist">
-          <button className={sourceTab === "local" ? "active" : ""} onClick={() => setSourceTab("local")} type="button">
-            Local PDFs
-          </button>
-          <button className={sourceTab === "web" ? "active" : ""} onClick={() => setSourceTab("web")} type="button">
-            Search web
-          </button>
-        </div>
-
         {sourceState.message ? <div className="success-box compact-box">{sourceState.message}</div> : null}
         {sourceState.error ? <div className="error-box compact-box">{sourceState.error}</div> : null}
+        {uploadState.message ? <div className="success-box compact-box">{uploadState.message}</div> : null}
+        {uploadState.error ? <div className="error-box compact-box">{uploadState.error}</div> : null}
 
-        {sourceTab === "local" ? (
-          <section className="modal-body">
-            <div className="section-title-row prominent">
-              <div>
-                <h2>Your library</h2>
-                <p>{downloadedPdfs.length ? `${downloadedPdfs.length} local PDFs available` : "No local PDFs found"}</p>
-              </div>
-              <button aria-label="Refresh PDFs" disabled={pdfListState.loading} onClick={onRefreshPdfs} type="button">
-                <RefreshCw size={16} aria-hidden="true" />
-              </button>
+        <section className="modal-body">
+          <label className={`upload-zone ${uploadState.loading ? "loading" : ""}`}>
+            <UploadCloud size={28} aria-hidden="true" />
+            <span className="upload-zone-title">{uploadState.loading ? "Uploading and indexing..." : "Upload PDF files"}</span>
+            <span className="upload-zone-meta">Choose one or more local paper PDFs.</span>
+            <input
+              accept="application/pdf,.pdf"
+              disabled={uploadState.loading || sourceState.loading}
+              multiple
+              onChange={(event) => {
+                void onUploadPdfs(event.target.files);
+                event.target.value = "";
+              }}
+              type="file"
+            />
+          </label>
+
+          <div className="section-title-row prominent">
+            <div>
+              <h2>Your library</h2>
+              <p>{downloadedPdfs.length ? `${downloadedPdfs.length} local PDFs available` : "No local PDFs found"}</p>
             </div>
-            <div className="source-picker-list">
-              {downloadedPdfs.map((pdf) => {
-                const paperId = paperIdFromFilename(pdf.filename);
-                const isAdded = sourceIds.has(paperId);
-                return (
-                  <button className="source-picker-item" disabled={isAdded || sourceState.loading} key={pdf.path} onClick={() => onAddLocalPdf(pdf)} type="button">
-                    <FileText size={20} aria-hidden="true" />
-                    <span className="source-picker-title">{pdf.filename}</span>
-                    <span className="source-picker-meta">
-                      {formatBytes(pdf.size_bytes)} · {formatDateTime(pdf.modified_at)}
-                    </span>
-                    <span className="source-picker-action">{isAdded ? "Added" : "Add"}</span>
-                  </button>
-                );
-              })}
-              {!downloadedPdfs.length && !pdfListState.loading ? <div className="empty-state">No downloaded PDFs found.</div> : null}
-            </div>
-          </section>
-        ) : (
-          <section className="modal-body">
-            <form className="search-form compact-search" onSubmit={onSearch}>
-              <div className="search-input-row">
-                <Search size={18} aria-hidden="true" />
-                <input onChange={(event) => setQuery(event.target.value)} placeholder="Agentic RAG" value={query} />
-                <button disabled={searchState.loading || !query.trim()} type="submit">
-                  Search
+            <button aria-label="Refresh PDFs" disabled={pdfListState.loading} onClick={onRefreshPdfs} type="button">
+              <RefreshCw size={16} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="source-picker-list">
+            {downloadedPdfs.map((pdf) => {
+              const paperId = paperIdFromFilename(pdf.filename);
+              const isAdded = sourceIds.has(paperId);
+              return (
+                <button className="source-picker-item" disabled={isAdded || sourceState.loading} key={pdf.path} onClick={() => onAddLocalPdf(pdf)} type="button">
+                  <FileText size={20} aria-hidden="true" />
+                  <span className="source-picker-title">{pdf.filename}</span>
+                  <span className="source-picker-meta">
+                    {formatBytes(pdf.size_bytes)} · {formatDateTime(pdf.modified_at)}
+                  </span>
+                  <span className="source-picker-action">{isAdded ? "Added" : "Add"}</span>
                 </button>
-              </div>
-              <div className="search-controls">
-                <label>
-                  Results
-                  <input max="20" min="1" onChange={(event) => setMaxResults(Number(event.target.value))} type="number" value={maxResults} />
-                </label>
-                <label>
-                  Sort
-                  <select onChange={(event) => setSortBy(event.target.value)} value={sortBy}>
-                    <option value="submittedDate">Submitted date</option>
-                    <option value="lastUpdatedDate">Last updated</option>
-                    <option value="relevance">Relevance</option>
-                  </select>
-                </label>
-              </div>
-            </form>
-            {searchState.error ? <div className="error-box">{searchState.error}</div> : null}
-            <div className="online-result-list modal-results">
-              {onlinePapers.length === 0 && !searchState.loading ? (
-                <div className="empty-state compact">
-                  <Search size={22} aria-hidden="true" />
-                  <span>Search results will appear here.</span>
-                </div>
-              ) : null}
-              {onlinePapers.map((paper) => (
-                <OnlinePaperCard disabled={sourceState.loading} key={paper.paper_id} onClick={() => onIngestOnlinePaper(paper)} paper={paper} />
-              ))}
-            </div>
-          </section>
-        )}
+              );
+            })}
+            {!downloadedPdfs.length && !pdfListState.loading ? <div className="empty-state">No downloaded PDFs found.</div> : null}
+          </div>
+        </section>
       </section>
     </div>
   );
@@ -840,20 +997,6 @@ function ChatThreadCard({ active, onClick, onDelete, onRename, thread }) {
         <Trash2 size={15} aria-hidden="true" />
       </button>
     </div>
-  );
-}
-
-function OnlinePaperCard({ disabled, onClick, paper }) {
-  return (
-    <button className="online-paper-card" disabled={disabled} onClick={onClick} type="button">
-      <span className="paper-title">{paper.title}</span>
-      <span className="paper-meta">
-        <CalendarDays size={14} aria-hidden="true" />
-        {paper.published}
-      </span>
-      <span className="author-line">{paper.authors?.join(", ") || "Unknown authors"}</span>
-      <span className="online-paper-action">Ingest & add</span>
-    </button>
   );
 }
 

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.api.dependencies import get_pdf_index_service, get_pdf_service
@@ -46,6 +46,40 @@ async def list_downloaded_pdfs() -> list[DownloadedPDF]:
         )
         for path in pdf_files
         if path.is_file()
+    ]
+
+
+@router.post("/pdfs/upload", response_model=list[DownloadedPDF], status_code=status.HTTP_201_CREATED)
+async def upload_local_pdfs(files: list[UploadFile] = File(...)) -> list[DownloadedPDF]:
+    destination_dir = Path(settings.DATA_DIR) / "pdfs"
+    destination_dir.mkdir(parents=True, exist_ok=True)
+
+    filenames = []
+    for upload in files:
+        filename = Path(upload.filename or "").name
+        if not filename.lower().endswith(".pdf") or not Path(filename).stem:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Only PDF files can be uploaded: {upload.filename}",
+            )
+        filenames.append(filename)
+
+    saved_files: list[Path] = []
+    for upload, filename in zip(files, filenames, strict=True):
+        destination_path = _unique_pdf_path(destination_dir, filename)
+        with destination_path.open("wb") as output_file:
+            while chunk := await upload.read(1024 * 1024):
+                output_file.write(chunk)
+        saved_files.append(destination_path)
+
+    return [
+        DownloadedPDF(
+            filename=path.name,
+            path=path.as_posix(),
+            size_bytes=path.stat().st_size,
+            modified_at=datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat(),
+        )
+        for path in saved_files
     ]
 
 
@@ -122,3 +156,18 @@ def _downloaded_pdf_path(filename: str) -> Path:
             detail=f"Downloaded PDF not found: {filename}",
         )
     return Path(settings.DATA_DIR) / "pdfs" / normalized_filename
+
+
+def _unique_pdf_path(destination_dir: Path, filename: str) -> Path:
+    path = destination_dir / filename
+    if not path.exists():
+        return path
+
+    stem = path.stem
+    suffix = path.suffix
+    counter = 2
+    while True:
+        candidate = destination_dir / f"{stem}-{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
