@@ -1123,6 +1123,319 @@ button:disabled {
   color: #ffffff;
 }
 
+.paper-chat-shell {
+  display: grid;
+  grid-template-rows: 64px minmax(0, 1fr);
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #f4f7fb;
+  color: #1f2937;
+}
+
+.paper-chat-topbar {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid #dbe3ec;
+  background: #ffffff;
+  padding: 0 16px;
+}
+
+.paper-chat-topbar h1 {
+  margin: 0;
+  overflow: hidden;
+  color: #17202a;
+  font-size: 1.28rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paper-chat-brand,
+.paper-chat-top-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 50%;
+  background: #f0f5fa;
+  color: #243447;
+}
+
+.paper-chat-top-action {
+  justify-self: end;
+}
+
+.paper-chat-brand:hover,
+.paper-chat-top-action:hover {
+  border-color: #2f6f78;
+  background: #e8f2f2;
+  color: #173d43;
+}
+
+.paper-chat-layout {
+  display: grid;
+  grid-template-columns: 348px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.paper-chat-shell .chat-rail,
+.paper-chat-shell .workspace-panel {
+  border: 0;
+  background: #f8fafc;
+  box-shadow: none;
+}
+
+.paper-chat-shell .chat-rail {
+  min-height: 0;
+  border-right: 1px solid #dbe3ec;
+}
+
+.paper-chat-shell .workspace-panel {
+  height: auto;
+}
+
+.paper-chat-shell .rail-header,
+.paper-chat-shell .workspace-header {
+  min-height: 50px;
+  border-bottom: 1px solid #dbe3ec;
+  background: #f8fafc;
+  padding: 12px 16px;
+}
+
+.paper-chat-shell .rail-header h1,
+.paper-chat-shell .workspace-header h2 {
+  color: #17202a;
+  font-size: 0.98rem;
+  font-weight: 650;
+}
+
+.paper-chat-shell .rail-header p,
+.paper-chat-shell .workspace-header p {
+  color: #667487;
+  font-size: 0.82rem;
+}
+
+.paper-chat-shell .rail-header button,
+.paper-chat-shell .source-chip > button:last-child {
+  border-color: #cbd5e1;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #536273;
+}
+
+.paper-chat-shell .rail-header button:hover,
+.paper-chat-shell .source-chip > button:last-child:hover {
+  border-color: #2f6f78;
+  background: #e8f2f2;
+  color: #173d43;
+}
+
+.paper-chat-shell .rail-list {
+  gap: 8px;
+  padding: 14px;
+}
+
+.paper-chat-shell .chat-thread-card {
+  grid-template-columns: minmax(0, 1fr) 34px 34px;
+  border: 1px solid #d6dee8;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.paper-chat-shell .chat-thread-card:hover,
+.paper-chat-shell .chat-thread-card.active {
+  border-color: #2f6f78;
+  background: #f1f8f8;
+}
+
+.paper-chat-shell .chat-thread-open {
+  padding: 12px;
+}
+
+.paper-chat-shell .chat-thread-title {
+  color: #17202a;
+}
+
+.paper-chat-shell .chat-thread-last {
+  color: #405063;
+}
+
+.paper-chat-shell .chat-thread-meta {
+  color: #667487;
+}
+
+.paper-chat-shell .chat-thread-edit,
+.paper-chat-shell .chat-thread-delete {
+  border-left-color: #d6dee8;
+  color: #667487;
+}
+
+.paper-chat-shell .workspace-actions {
+  gap: 8px;
+}
+
+.paper-chat-shell .workspace-actions .secondary-action,
+.paper-chat-shell .workspace-actions .primary-action,
+.paper-chat-shell .source-empty-button {
+  min-height: 34px;
+  border-color: #ccd6e2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.paper-chat-shell .workspace-actions .primary-action {
+  border-color: #255e67;
+  background: #255e67;
+  color: #ffffff;
+}
+
+.paper-chat-shell .workspace-actions .secondary-action:hover,
+.paper-chat-shell .source-empty-button:hover {
+  border-color: #2f6f78;
+  background: #e8f2f2;
+  color: #173d43;
+}
+
+.paper-chat-shell .workspace-actions .primary-action:hover {
+  border-color: #1c4c54;
+  background: #1c4c54;
+}
+
+.paper-chat-shell .sources-strip {
+  gap: 8px;
+  border-bottom: 1px solid #dbe3ec;
+  background: #f8fafc;
+  padding: 12px 16px;
+}
+
+.paper-chat-shell .source-chip {
+  max-width: 360px;
+  border-color: #d6dee8;
+  border-radius: 999px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.paper-chat-shell .source-chip > button:first-child {
+  color: #334155;
+}
+
+.paper-chat-shell .chat-log {
+  background:
+    radial-gradient(circle at 24% 12%, rgb(77 115 255 / 7%), transparent 32%),
+    radial-gradient(circle at 78% 12%, rgb(43 159 85 / 8%), transparent 34%),
+    #f8fafc;
+  padding: 24px min(7vw, 78px);
+}
+
+.paper-chat-shell .empty-state.compact {
+  width: min(620px, 100%);
+  min-height: 220px;
+  margin: auto;
+  border: 1px dashed #d6dee8;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #667487;
+}
+
+.paper-chat-shell .message {
+  max-width: min(860px, 100%);
+}
+
+.paper-chat-shell .message svg {
+  color: #667487;
+}
+
+.paper-chat-shell .message-bubble {
+  border-color: #d6dee8;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #243447;
+  box-shadow: 0 10px 30px rgb(36 52 70 / 8%);
+}
+
+.paper-chat-shell .message.user .message-bubble {
+  border-color: #255e67;
+  background: #255e67;
+  color: #ffffff;
+}
+
+.paper-chat-shell .citation-pill {
+  border-color: #cbd5e1;
+  border-radius: 999px;
+  background: #f6f8fa;
+  color: #405063;
+}
+
+.paper-chat-shell .chat-form {
+  grid-template-columns: minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 12px;
+  margin: 0 16px 14px;
+  border: 1px solid #ccd6e2;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 12px 36px rgb(36 52 70 / 10%);
+  padding: 9px 10px 9px 16px;
+}
+
+.paper-chat-shell .chat-form textarea {
+  min-height: 42px;
+  max-height: 130px;
+  border: 0;
+  background: transparent;
+  color: #17202a;
+  padding: 10px 0;
+}
+
+.paper-chat-shell .chat-form textarea:focus {
+  box-shadow: none;
+}
+
+.paper-chat-shell .chat-form button {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border-radius: 50%;
+  background: #255e67;
+}
+
+.paper-chat-shell .chat-form button:hover {
+  background: #1c4c54;
+}
+
+.paper-chat-shell .compact-box {
+  margin: 12px 16px 0;
+  border-radius: 10px;
+}
+
+.paper-chat-shell .compact-error {
+  margin: 0 16px 10px;
+  border-radius: 10px;
+}
+
+.paper-chat-shell .workspace-empty {
+  background:
+    radial-gradient(circle at 30% 18%, rgb(77 115 255 / 8%), transparent 30%),
+    radial-gradient(circle at 70% 15%, rgb(43 159 85 / 8%), transparent 32%),
+    #f8fafc;
+}
+
+.paper-chat-shell .workspace-empty h2 {
+  color: #17202a;
+}
+
 .chat-rail,
 .workspace-panel {
   border: 1px solid #cfd7df;

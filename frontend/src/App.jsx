@@ -9,7 +9,6 @@ import {
   Clipboard,
   FileText,
   Globe2,
-  Home,
   Library,
   Link2,
   MessageSquare,
@@ -408,17 +407,25 @@ function App() {
   }
 
   return (
-    <main className="research-shell">
-      <aside className="chat-rail" aria-label="Chats">
+    <main className="paper-chat-shell">
+      <header className="paper-chat-topbar">
+        <button aria-label="Trang chủ" className="paper-chat-brand" onClick={returnHome} type="button">
+          <ArrowLeft size={17} aria-hidden="true" />
+        </button>
+        <h1>Chat với paper</h1>
+        <button aria-label="New chat" className="paper-chat-top-action" onClick={createNewChat} type="button">
+          <Plus size={18} aria-hidden="true" />
+        </button>
+      </header>
+
+      <section className="paper-chat-layout">
+      <aside className="chat-rail paper-chat-rail" aria-label="Chats">
         <div className="rail-header">
           <div>
-            <h1>AI Research Assistant</h1>
+            <h1>Cuộc trò chuyện</h1>
             <p>{chatThreads.length ? `${chatThreads.length} chats` : "No chats yet"}</p>
           </div>
           <div className="rail-actions">
-            <button aria-label="Home" onClick={returnHome} type="button">
-              <Home size={18} aria-hidden="true" />
-            </button>
             <button aria-label="New chat" onClick={createNewChat} type="button">
               <Plus size={18} aria-hidden="true" />
             </button>
@@ -448,7 +455,7 @@ function App() {
         </div>
       </aside>
 
-      <section className="workspace-panel" aria-label="Current chat">
+      <section className="workspace-panel paper-chat-workspace" aria-label="Current chat">
         {activeChat ? (
           <ChatWorkspace
             activeChat={activeChat}
@@ -466,6 +473,7 @@ function App() {
         ) : (
           <EmptyWorkspace onCreateChat={createNewChat} />
         )}
+      </section>
       </section>
 
       {isSourceModalOpen ? (
