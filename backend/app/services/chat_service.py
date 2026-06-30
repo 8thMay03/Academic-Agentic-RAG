@@ -15,7 +15,7 @@ MAX_HISTORY_CHARS = 2000
 MAX_RETRIEVAL_HISTORY_QUESTIONS = 3
 MAX_RETRIEVAL_QUERIES = 3
 CITATION_PATTERN = re.compile(r"\[([^\[\]]+)\]")
-JSON_OBJECT_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
+JSON_ARRAY_PATTERN = re.compile(r"\[.*\]", re.DOTALL)
 
 
 class ChatService:
@@ -127,15 +127,27 @@ class ChatService:
         question: str,
         chat_history: list[ChatHistoryMessage] | None,
     ) -> list[str]:
+        rewritten_query = await self._rewrite_query(question, chat_history)
+        multi_queries = await self._build_multi_queries(rewritten_query)
+        return self._dedupe_queries([rewritten_query, *multi_queries])
+
+    async def _rewrite_query(
+        self,
+        question: str,
+        chat_history: list[ChatHistoryMessage] | None,
+    ) -> str:
         fallback_query = self._build_retrieval_query(question, chat_history)
-        prompt = self._retrieval_plan_prompt(question, chat_history)
+        if not chat_history:
+            return fallback_query
+
+        prompt = self._rewrite_query_prompt(question, chat_history)
 
         try:
-            raw_plan = await self._llm_service.complete(prompt)
+            rewritten_query = self._clean_query(await self._llm_service.complete(prompt))
         except Exception:
-            return [fallback_query]
+            return fallback_query
 
-        return self._parse_retrieval_plan(raw_plan, fallback_query)
+        return rewritten_query or fallback_query
 
     @staticmethod
     def _build_retrieval_query(question: str, chat_history: list[ChatHistoryMessage] | None) -> str:
@@ -150,39 +162,56 @@ class ChatService:
         )
 
     @staticmethod
-    def _retrieval_plan_prompt(question: str, chat_history: list[ChatHistoryMessage] | None) -> str:
+    def _rewrite_query_prompt(question: str, chat_history: list[ChatHistoryMessage] | None) -> str:
         prior_questions = ChatService._recent_user_questions(chat_history) or "None"
         return (
-            "Create a retrieval plan for question answering over the selected paper PDFs.\n"
-            "Rewrite the current question as a standalone retrieval query. Then provide up to 2 additional "
-            "short query variants that may use alternate academic wording from the same question.\n"
+            "Rewrite the current question as a standalone retrieval query for question answering "
+            "over the selected paper PDFs.\n"
             "Do not answer the question. Do not add facts that are not implied by the conversation.\n"
-            "Return JSON only with this schema:\n"
-            '{"standalone_question":"...","search_queries":["...","..."]}\n\n'
+            "Return only the rewritten query, with no labels or explanation.\n\n"
             f"Previous user questions:\n{prior_questions}\n\n"
             f"Current question: {question}"
         )
 
-    @staticmethod
-    def _parse_retrieval_plan(raw_plan: str, fallback_query: str) -> list[str]:
-        plan_text = raw_plan.strip()
-        json_match = JSON_OBJECT_PATTERN.search(plan_text)
-        if json_match:
-            plan_text = json_match.group(0)
+    async def _build_multi_queries(self, rewritten_query: str) -> list[str]:
+        prompt = self._multi_query_prompt(rewritten_query)
 
         try:
-            plan = json.loads(plan_text)
+            raw_queries = await self._llm_service.complete(prompt)
+        except Exception:
+            return []
+
+        return self._parse_multi_queries(raw_queries)
+
+    @staticmethod
+    def _multi_query_prompt(rewritten_query: str) -> str:
+        return (
+            "Generate up to 2 alternate retrieval queries for searching academic paper chunks.\n"
+            "Use concise academic wording, synonyms, or likely section terminology.\n"
+            "Do not answer the question. Do not add facts that are not present in the query.\n"
+            "Return JSON array only, for example: [\"query variant 1\", \"query variant 2\"]\n\n"
+            f"Rewritten query: {rewritten_query}"
+        )
+
+    @staticmethod
+    def _parse_multi_queries(raw_queries: str) -> list[str]:
+        query_text = raw_queries.strip()
+        json_match = JSON_ARRAY_PATTERN.search(query_text)
+        if json_match:
+            query_text = json_match.group(0)
+
+        try:
+            parsed_queries = json.loads(query_text)
         except json.JSONDecodeError:
-            return [fallback_query]
-        if not isinstance(plan, dict):
-            return [fallback_query]
+            return []
+        if not isinstance(parsed_queries, list):
+            return []
 
-        queries = [ChatService._clean_query(plan.get("standalone_question"))]
-        search_queries = plan.get("search_queries") or []
-        if isinstance(search_queries, list):
-            queries.extend(ChatService._clean_query(query) for query in search_queries)
-
-        return ChatService._dedupe_queries([*queries, fallback_query])
+        return [
+            cleaned_query
+            for query in parsed_queries[: MAX_RETRIEVAL_QUERIES - 1]
+            if (cleaned_query := ChatService._clean_query(query))
+        ]
 
     @staticmethod
     def _clean_query(query: object) -> str:

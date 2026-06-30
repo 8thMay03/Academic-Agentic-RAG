@@ -140,7 +140,7 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
     assert answer == UNKNOWN_ANSWER
     assert citations == []
     assert len(llm.prompts) == 1
-    assert "Create a retrieval plan" in llm.prompts[0]
+    assert "Generate up to 2 alternate retrieval queries" in llm.prompts[0]
     assert retriever.top_k == 3
     assert retriever.calls == [
         {
@@ -176,7 +176,7 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert citations[0].cross_encoder_score == 2.6
     assert citations[0].reranker == "fake-cross-encoder"
     assert citations[0].matched_terms == ["planning", "retrieve", "evidence"]
-    assert "Create a retrieval plan" in llm.prompts[0]
+    assert "Generate up to 2 alternate retrieval queries" in llm.prompts[0]
     assert "If the context does not contain enough information" in llm.prompts[1]
     assert "I don't know" in llm.prompts[1]
     assert "Every factual claim supported by paper context" in llm.prompts[1]
@@ -188,11 +188,8 @@ async def test_chat_service_uses_recent_history_for_follow_up_retrieval_and_prom
     retriever = FakeRetrieverService([RETRIEVED_CHUNK])
     llm = FakeLLMService(
         [
-            (
-                '{"standalone_question":"How does Agentic RAG make retrieval decisions?",'
-                '"search_queries":["Agentic RAG planning retrieval evidence",'
-                '"retrieval decision mechanism"]}'
-            ),
+            "How does Agentic RAG make retrieval decisions?",
+            '["Agentic RAG planning retrieval evidence","retrieval decision mechanism"]',
             "It uses planning for retrieval decisions [paper-1:p3:c0].",
         ]
     )
@@ -217,10 +214,11 @@ async def test_chat_service_uses_recent_history_for_follow_up_retrieval_and_prom
         "Agentic RAG planning retrieval evidence",
         "retrieval decision mechanism",
     ]
-    assert "Create a retrieval plan" in llm.prompts[0]
+    assert "Rewrite the current question as a standalone retrieval query" in llm.prompts[0]
     assert "Previous user questions:" in llm.prompts[0]
-    assert "Recent conversation:" in llm.prompts[1]
-    assert "Use the recent conversation only to resolve" in llm.prompts[1]
+    assert "Generate up to 2 alternate retrieval queries" in llm.prompts[1]
+    assert "Recent conversation:" in llm.prompts[2]
+    assert "Use the recent conversation only to resolve" in llm.prompts[2]
 
 
 @pytest.mark.asyncio
@@ -278,7 +276,7 @@ async def test_chat_service_filters_context_by_paper_ids() -> None:
     assert answer == UNKNOWN_ANSWER
     assert citations == []
     assert len(llm.prompts) == 1
-    assert "Create a retrieval plan" in llm.prompts[0]
+    assert "Generate up to 2 alternate retrieval queries" in llm.prompts[0]
 
 
 @pytest.mark.asyncio
@@ -329,11 +327,7 @@ async def test_chat_service_retrieves_with_multi_query_and_deduplicates_chunks()
     )
     llm = FakeLLMService(
         [
-            (
-                '{"standalone_question":"How does the method compare with baselines?",'
-                '"search_queries":["baseline comparison retrieval planning",'
-                '"non-planning baseline experiments"]}'
-            ),
+            '["baseline comparison retrieval planning","non-planning baseline experiments"]',
             "It compares against a non-planning baseline [paper-1:p4:c0].",
         ]
     )
