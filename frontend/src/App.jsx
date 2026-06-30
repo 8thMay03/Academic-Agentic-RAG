@@ -96,22 +96,11 @@ function App() {
     void refreshDownloadedPdfs();
   }, []);
 
-  async function startChatMode() {
+  function startChatMode() {
     setMode("chat");
-    if (!activeChat) {
-      setSourceState({ loading: false, error: "", message: "" });
-      setChatState({ loading: false, error: "" });
-      try {
-        const session = await createChatSession("New chat");
-        setActiveChat(session);
-        setQuestion("");
-        setIsSourceModalOpen(false);
-        await refreshChatThreads();
-      } catch (error) {
-        setChatListState({ loading: false, error: error.message });
-      }
-      return;
-    }
+    setSourceState({ loading: false, error: "", message: "" });
+    setChatState({ loading: false, error: "" });
+    setQuestion("");
     setIsSourceModalOpen(false);
   }
 
@@ -575,8 +564,8 @@ function HomeScreen({ onStartChat, onStartResearch }) {
             <span className="mode-title">Chat với paper</span>
             <span className="mode-copy">Tải local PDF lên, index tài liệu, rồi hỏi đáp với agent dựa trên nội dung paper.</span>
             <span className="mode-action">
-              <UploadCloud size={17} aria-hidden="true" />
-              Tải PDF
+              <MessageSquare size={17} aria-hidden="true" />
+              Mở chat
             </span>
           </button>
 
