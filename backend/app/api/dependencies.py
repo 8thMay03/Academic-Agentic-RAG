@@ -7,6 +7,7 @@ from app.services.rag_service import RAGService
 from app.services.retriever_service import RetrieverService
 from app.services.search_service import SearchService
 from app.services.summary_service import SummaryService
+from app.services.web_search_service import WebSearchService
 from app.storage.chat_history_store import ChatHistoryStore
 
 
@@ -44,7 +45,7 @@ def get_rag_service() -> RAGService:
 
 def get_chat_service() -> ChatService:
     llm_service = get_llm_service()
-    return ChatService(RAGService(get_retriever_service(), llm_service), llm_service)
+    return ChatService(RAGService(get_retriever_service(), llm_service), llm_service, WebSearchService())
 
 
 

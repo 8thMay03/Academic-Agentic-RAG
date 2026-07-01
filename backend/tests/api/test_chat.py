@@ -217,6 +217,48 @@ def test_chat_with_papers_returns_answer_and_citations() -> None:
     }
 
 
+def test_chat_session_without_sources_searches_all_local_documents() -> None:
+    class NoSourceChatService:
+        async def answer(
+            self,
+            question: str,
+            paper_ids: list[str] | None = None,
+            top_k: int = 5,
+            score_threshold: float = 0.65,
+            chat_history: list[ChatHistoryMessage] | None = None,
+        ) -> tuple[str, list[Citation]]:
+            assert question == "What is CRAG?"
+            assert paper_ids is None
+            assert chat_history == []
+            return "CRAG corrects retrieved context.", []
+
+    class NoSourceHistoryStore(FakeChatHistoryStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.session.sources = []
+            self.session.messages = []
+            self.messages = []
+
+    history_store = NoSourceHistoryStore()
+    app.dependency_overrides[get_chat_service] = lambda: NoSourceChatService()
+    app.dependency_overrides[get_chat_history_store] = lambda: history_store
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/chat",
+        json={
+            "question": "What is CRAG?",
+            "chat_id": "chat-1",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"answer": "CRAG corrects retrieved context.", "citations": []}
+    assert history_store.appended["paper_id"] == "chat-1"
+
+
 def test_get_chat_history_returns_messages() -> None:
     app.dependency_overrides[get_chat_history_store] = lambda: FakeChatHistoryStore()
     client = TestClient(app)

@@ -34,7 +34,6 @@ async def chat_with_papers(
         session = await history_store.get_session(request.chat_id)
         if session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {request.chat_id}")
-        paper_ids = paper_ids or [source.paper_id for source in session.sources]
         chat_history = session.messages
     elif history_key:
         chat_history = await history_store.get_messages(history_key)
@@ -69,7 +68,6 @@ async def stream_chat_with_papers(
         session = await history_store.get_session(request.chat_id)
         if session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {request.chat_id}")
-        paper_ids = paper_ids or [source.paper_id for source in session.sources]
         chat_history = session.messages
     elif history_key:
         chat_history = await history_store.get_messages(history_key)

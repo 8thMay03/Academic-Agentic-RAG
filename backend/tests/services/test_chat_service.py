@@ -2,6 +2,7 @@ import pytest
 
 from app.models.chat import ChatHistoryMessage
 from app.services.chat_service import UNKNOWN_ANSWER, ChatService
+from app.services.web_search_service import WebSearchResult
 
 
 class FakeRAGService:
@@ -44,6 +45,16 @@ class FakeLLMService:
             yield f"{token} "
 
 
+class FakeWebSearchService:
+    def __init__(self, sources: list[dict] | None = None) -> None:
+        self.sources = sources or []
+        self.calls = []
+
+    async def search_papers(self, query: str, max_results: int = 5) -> WebSearchResult:
+        self.calls.append({"query": query, "max_results": max_results})
+        return WebSearchResult(sources=self.sources)
+
+
 RETRIEVED_CHUNK = {
     "id": "paper-1:p3:c0",
     "text": "Agentic RAG uses planning to decide when to retrieve evidence.",
@@ -74,13 +85,15 @@ RETRIEVED_CHUNK = {
 async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> None:
     rag = FakeRAGService([])
     llm = FakeLLMService("This should not be called.")
-    service = ChatService(rag, llm)
+    web = FakeWebSearchService()
+    service = ChatService(rag, llm, web)
 
     answer, citations = await service.answer("What is the method?", top_k=3, score_threshold=0.7)
 
     assert answer == UNKNOWN_ANSWER
     assert citations == []
     assert llm.prompts == []
+    assert web.calls == [{"query": "What is the method?", "max_results": 3}]
     assert rag.calls == [
         {
             "question": "What is the method?",
@@ -93,10 +106,36 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
 
 
 @pytest.mark.asyncio
+async def test_chat_service_falls_back_to_web_when_local_context_is_missing() -> None:
+    rag = FakeRAGService([])
+    web = FakeWebSearchService(
+        [
+            {
+                "title": "Agentic RAG vs CRAG",
+                "url": "https://example.com/agentic-rag-crag",
+                "content": "Agentic RAG uses agent planning; CRAG corrects retrieved context.",
+                "score": 0.82,
+            }
+        ]
+    )
+    llm = FakeLLMService("Agentic RAG plans retrieval; CRAG corrects retrieval [web:1].")
+    service = ChatService(rag, llm, web)
+
+    answer, citations = await service.answer("How does Agentic RAG differ from CRAG?", top_k=4)
+
+    assert web.calls == [{"query": "How does Agentic RAG differ from CRAG?", "max_results": 4}]
+    assert answer == "Agentic RAG plans retrieval; CRAG corrects retrieval [web:1]."
+    assert citations[0].chunk_id == "web:1"
+    assert citations[0].retrieval_sources == ["web"]
+    assert citations[0].evidence_quality == "web"
+    assert "Agentic RAG uses agent planning" in llm.prompts[0]
+
+
+@pytest.mark.asyncio
 async def test_chat_service_answers_with_citations_from_context() -> None:
     rag = FakeRAGService([RETRIEVED_CHUNK])
     llm = FakeLLMService("It uses planning for retrieval decisions (p. 3).")
-    service = ChatService(rag, llm)
+    service = ChatService(rag, llm, FakeWebSearchService())
 
     answer, citations = await service.answer("How does planning retrieve evidence?")
 
@@ -111,7 +150,7 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert citations[0].matched_terms == ["planning", "retrieve", "evidence"]
     assert "If the context does not contain enough information" in llm.prompts[0]
     assert "I don't know" in llm.prompts[0]
-    assert "Every factual claim supported by paper context" in llm.prompts[0]
+    assert "Every factual claim supported by retrieved context" in llm.prompts[0]
     assert "[paper-1:p3:c0]" in llm.prompts[0]
 
 
@@ -119,7 +158,7 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
 async def test_chat_service_passes_recent_history_to_rag_and_prompt() -> None:
     rag = FakeRAGService([RETRIEVED_CHUNK])
     llm = FakeLLMService("It uses planning for retrieval decisions [paper-1:p3:c0].")
-    service = ChatService(rag, llm)
+    service = ChatService(rag, llm, FakeWebSearchService())
     history = [
         ChatHistoryMessage(
             role="user",
@@ -144,7 +183,7 @@ async def test_chat_service_passes_recent_history_to_rag_and_prompt() -> None:
 async def test_chat_service_streams_answer_tokens_with_citations() -> None:
     rag = FakeRAGService([RETRIEVED_CHUNK])
     llm = FakeLLMService("It uses planning")
-    service = ChatService(rag, llm)
+    service = ChatService(rag, llm, FakeWebSearchService())
 
     token_stream, citations = await service.stream_answer("What is the method?")
     tokens = [token async for token in token_stream]
@@ -158,7 +197,7 @@ async def test_chat_service_streams_answer_tokens_with_citations() -> None:
 async def test_chat_service_removes_invalid_citations_from_answer() -> None:
     rag = FakeRAGService([RETRIEVED_CHUNK])
     llm = FakeLLMService("It uses planning [made-up:p1:c0].")
-    service = ChatService(rag, llm)
+    service = ChatService(rag, llm, FakeWebSearchService())
 
     answer, citations = await service.answer("How does planning retrieve evidence?")
 

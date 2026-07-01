@@ -56,6 +56,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
     if (!initialPaper || initialPaperHandled.current) return;
     initialPaperHandled.current = true;
     void startChatWithPaper(initialPaper);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPaper]);
 
   async function refreshThreads() {
@@ -85,7 +86,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
       const session = await createChatSession("Cuộc trò chuyện mới");
       setActiveChat(session);
       setQuestion("");
-      setSourcePanelOpen(true);
+      setSourcePanelOpen(false);
       await refreshThreads();
     } catch (error) {
       setThreadsState({ loading: false, error: error.message });
@@ -189,7 +190,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
   async function handleAsk(event) {
     event.preventDefault();
     const trimmedQuestion = question.trim();
-    if (!trimmedQuestion || !activeChat || sourceState.loading || activeChat.sources.length === 0) return;
+    if (!trimmedQuestion || !activeChat || sourceState.loading) return;
 
     const optimisticUser = {
       role: "user",
@@ -218,6 +219,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
       await streamChatWithPaper({
         question: trimmedQuestion,
         chatId,
+        paperIds: activeChat.sources.length ? activeChat.sources.map((source) => source.paper_id) : undefined,
         topK: 5,
         scoreThreshold: 0.25,
         onToken: (token) => {
@@ -284,7 +286,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
     });
   }
 
-  const canChat = activeChat && activeChat.sources.length > 0 && !sourceState.loading;
+  const canChat = Boolean(activeChat) && !sourceState.loading;
 
   return (
     <div className={`chat-shell ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
@@ -349,7 +351,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
                   Xóa tin nhắn
                 </button>
                 <button className="btn-ghost btn-sm" onClick={() => setSourcePanelOpen(true)} type="button">
-                  Nguồn ({activeChat.sources.length})
+                  Nguồn tùy chọn ({activeChat.sources.length})
                 </button>
               </>
             ) : null}
@@ -364,7 +366,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
                   <Bot size={28} aria-hidden="true" />
                 </div>
                 <h2>Bạn cần hỗ trợ gì hôm nay?</h2>
-                <p>Chọn một cuộc trò chuyện hoặc tạo mới, thêm paper làm nguồn, rồi hỏi AI.</p>
+                <p>Tạo cuộc trò chuyện mới rồi hỏi AI. Agent sẽ tìm trong toàn bộ tài liệu local và dùng web khi thiếu context.</p>
                 <button className="btn-primary" onClick={createNewChat} type="button">
                   <Plus size={16} aria-hidden="true" />
                   Bắt đầu cuộc trò chuyện
@@ -393,7 +395,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
                       event.currentTarget.form?.requestSubmit();
                     }
                   }}
-                  placeholder={canChat ? "Nhắn tin cho AI..." : "Thêm ít nhất một paper trước khi chat"}
+                  placeholder={canChat ? "Nhắn tin cho AI..." : "Tạo cuộc trò chuyện để bắt đầu"}
                   rows={1}
                   value={question}
                 />
@@ -460,8 +462,8 @@ function ChatMessages({ activeChat, canChat, chatState, onOpenCitation, sourceSt
         <h2>Hỏi về paper của bạn</h2>
         <p>
           {canChat
-            ? "AI sẽ trả lời dựa trên nội dung các paper đã gắn vào cuộc trò chuyện."
-            : "Thêm paper làm nguồn trước khi bắt đầu hỏi."}
+            ? "AI sẽ truy xuất toàn bộ tài liệu local, rồi dùng web nếu local context chưa đủ."
+            : "Tạo cuộc trò chuyện để bắt đầu hỏi AI."}
         </p>
         {sourceState.error ? <div className="banner banner-error">{sourceState.error}</div> : null}
         {sourceState.message ? <div className="banner banner-success">{sourceState.message}</div> : null}
@@ -522,7 +524,7 @@ function SourcePanel({ activeChat, downloadedPdfs, onAddPdf, onClose, onRemoveSo
         <header className="source-panel-header">
           <div>
             <h2>Nguồn paper</h2>
-            <p>Chọn paper local để AI tham chiếu khi trả lời.</p>
+            <p>Nguồn là tùy chọn. Không chọn nguồn thì AI sẽ tìm trong toàn bộ tài liệu local.</p>
           </div>
           <button className="btn-icon" onClick={onClose} type="button" aria-label="Đóng">
             <X size={18} aria-hidden="true" />

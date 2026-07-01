@@ -5,12 +5,15 @@ from app.models.chat import ChatHistoryMessage
 from app.models.citation import Citation
 from app.services.llm_service import LLMService
 from app.services.rag_service import RAGService
+from app.services.web_search_service import WebSearchService
 from app.vectorstore.bm25 import tokenize
 
 
 UNKNOWN_ANSWER = "I don't know"
 MAX_HISTORY_MESSAGES = 6
 MAX_HISTORY_CHARS = 2000
+MIN_CONTEXT_CHUNKS = 2
+MIN_CONTEXT_CHARS = 600
 CITATION_PATTERN = re.compile(r"\[([^\[\]]+)\]")
 
 
@@ -19,9 +22,11 @@ class ChatService:
         self,
         rag_service: RAGService,
         llm_service: LLMService,
+        web_search_service: WebSearchService | None = None,
     ) -> None:
         self._rag_service = rag_service
         self._llm_service = llm_service
+        self._web_search_service = web_search_service or WebSearchService()
 
     async def answer(
         self,
@@ -70,11 +75,48 @@ class ChatService:
             score_threshold=score_threshold,
             chat_history=chat_history,
         )
+        if not self._has_enough_context(filtered_chunks):
+            filtered_chunks = [
+                *filtered_chunks,
+                *await self._retrieve_web_context(question, top_k),
+            ]
 
         if not filtered_chunks:
             return None, []
 
         return self._build_prompt(question, filtered_chunks, chat_history), self._citations(filtered_chunks, question)
+
+    async def _retrieve_web_context(self, question: str, top_k: int) -> list[dict]:
+        result = await self._web_search_service.search_papers(question, max_results=top_k)
+        chunks = []
+        for index, source in enumerate(result.sources[:top_k], start=1):
+            text = " ".join(str(source.get("content") or "").split())
+            if not text:
+                continue
+            title = str(source.get("title") or source.get("url") or f"Web source {index}")
+            url = str(source.get("url") or "")
+            chunk_id = f"web:{index}"
+            chunks.append(
+                {
+                    "id": chunk_id,
+                    "text": text,
+                    "metadata": {
+                        "paper_id": url or chunk_id,
+                        "title": title,
+                        "chunk_id": chunk_id,
+                        "url": url,
+                    },
+                    "score": ChatService._optional_float(source.get("score")),
+                    "retrieval_sources": ["web"],
+                    "citation": {
+                        "paper_id": url or chunk_id,
+                        "title": title,
+                        "chunk_id": chunk_id,
+                        "text": text,
+                    },
+                }
+            )
+        return chunks
 
     @staticmethod
     async def _single_token_stream(token: str) -> AsyncIterator[str]:
@@ -138,12 +180,12 @@ class ChatService:
             else ""
         )
         return (
-            "Answer the question using only the retrieved paper context below.\n"
+            "Answer the question using only the retrieved local paper and web context below.\n"
             "Use the recent conversation only to resolve pronouns, ellipses, and follow-up references.\n"
             "If the context does not contain enough information to answer, respond exactly:\n"
             f"{UNKNOWN_ANSWER}\n\n"
             "Do not use outside knowledge. Do not guess. Keep the answer concise.\n"
-            "Every factual claim supported by paper context must end with one or more exact chunk_id citations "
+            "Every factual claim supported by retrieved context must end with one or more exact chunk_id citations "
             "in square brackets, e.g. [paper-1:p3:c0].\n"
             "Use only chunk_id values that appear in the retrieved context. Do not invent citation ids.\n\n"
             f"Available chunk_ids: {available_chunk_ids}\n\n"
@@ -205,6 +247,8 @@ class ChatService:
 
     @staticmethod
     def _evidence_quality(chunk: dict) -> str:
+        if "web" in set(chunk.get("retrieval_sources") or []):
+            return "web"
         score = ChatService._optional_float(chunk.get("rerank_score"))
         if score is None:
             score = ChatService._optional_float(chunk.get("score"))
@@ -233,6 +277,13 @@ class ChatService:
         citation = chunk.get("citation") or {}
         metadata = chunk.get("metadata") or {}
         return str(citation.get("chunk_id") or metadata.get("chunk_id") or chunk.get("id") or "")
+
+    @staticmethod
+    def _has_enough_context(chunks: list[dict]) -> bool:
+        if len(chunks) >= MIN_CONTEXT_CHUNKS:
+            return True
+        context_chars = sum(len(str(chunk.get("text") or "")) for chunk in chunks)
+        return context_chars >= MIN_CONTEXT_CHARS
 
     @staticmethod
     def _ground_answer_citations(answer: str, citations: list[Citation]) -> str:
@@ -264,6 +315,8 @@ class ChatService:
 
     @staticmethod
     def _citations_referenced_by_answer(citations: list[Citation], answer: str) -> list[Citation]:
+        if answer.strip() == UNKNOWN_ANSWER:
+            return []
         referenced_chunk_ids = ChatService._referenced_chunk_ids(answer)
         if not referenced_chunk_ids:
             return citations
