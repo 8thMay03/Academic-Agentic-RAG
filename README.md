@@ -4,7 +4,7 @@ Trợ lý nghiên cứu học thuật giúp quản lý paper PDF local, hỏi đ
 
 ## Tính năng
 
-- **Thư viện paper local** — xem danh sách PDF, xem chi tiết, tải file lên
+- **Thư viện tri thức** — xem danh sách PDF, xem chi tiết, tải file lên
 - **Chat với AI** — giao diện hội thoại, streaming, quản lý session và nguồn paper
 - **RAG trên PDF** — parse, chunk, embed vào ChromaDB; hybrid retrieval (vector + BM25) + rerank
 - **Agentic RAG** — LangGraph quyết định khi nào cần web search
