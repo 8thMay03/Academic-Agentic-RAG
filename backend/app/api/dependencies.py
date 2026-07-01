@@ -1,3 +1,4 @@
+from app.services.agentic_chat_workflow import AgenticChatWorkflow
 from app.services.chat_service import ChatService
 from app.services.compare_service import CompareService
 from app.services.llm_service import LLMService
@@ -45,7 +46,12 @@ def get_rag_service() -> RAGService:
 
 def get_chat_service() -> ChatService:
     llm_service = get_llm_service()
-    return ChatService(RAGService(get_retriever_service(), llm_service), llm_service, WebSearchService())
+    workflow = AgenticChatWorkflow(
+        RAGService(get_retriever_service(), llm_service),
+        llm_service,
+        WebSearchService(),
+    )
+    return ChatService(workflow)
 
 
 

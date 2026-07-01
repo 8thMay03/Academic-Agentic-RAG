@@ -23,6 +23,17 @@ Resilience:
 - PDF download, parsing, indexing, LLM summarization, and comparison errors are recorded in state instead of failing the whole research request.
 - When LLM summarization or comparison is unavailable, the workflow falls back to extracted text, abstracts, and title-based comparison.
 
-Q&A flow:
+Chat Agentic RAG flow:
 
-`retrieve -> answer`
+`query -> local_retrieve -> quality_gate -> web_search_when_needed -> collect_web_context -> answer_with_citations -> persist_chat_history`
+
+Implementation:
+
+- `AgenticChatWorkflow` owns the chat pipeline state, trace events, context quality gate, web fallback, prompt construction, citation grounding, and answer generation.
+- `ChatService` is an adapter that preserves the existing `answer` and `stream_answer` API.
+- Chat routes load chat history before the workflow and persist the final user/assistant exchange after the workflow returns.
+- When local context is insufficient, web snippets are converted into temporary cited context with chunk ids such as `web:1`.
+
+Current limitation:
+
+- Web results are used as request-time context. Downloading/extracting/indexing new web documents into the long-term knowledge base is the next ingestion step, not part of this refactor.
