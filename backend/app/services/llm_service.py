@@ -25,7 +25,7 @@ class LLMService:
                 {
                     "role": "system",
                     "content": (
-                        "You are a careful research assistant. "
+                        "You are a careful Agentic RAG assistant. "
                         "Return concise, accurate Markdown."
                     ),
                 },
@@ -43,7 +43,7 @@ class LLMService:
                 {
                     "role": "system",
                     "content": (
-                        "You are a careful research assistant. "
+                        "You are a careful Agentic RAG assistant. "
                         "Return concise, accurate Markdown."
                     ),
                 },

@@ -6,7 +6,9 @@ Agentic RAG chat flow:
 
 LangGraph implementation:
 
-- `backend/app/agent/graph.py` owns the Agentic RAG graph.
+- `backend/app/agent/graph.py` owns the Agentic RAG topology and conditional routing.
+- `backend/app/agent/state.py` defines the graph state.
+- `backend/app/agent/nodes/` contains one node module per workflow step.
 - `AgenticChatWorkflow` is the runtime adapter used by `ChatService`.
 - Chat routes load recent chat history before the graph runs and persist the final exchange after the answer is returned.
 
