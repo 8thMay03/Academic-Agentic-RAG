@@ -32,7 +32,7 @@ class WebSearchService:
 
         payload = {
             "api_key": self._api_key,
-            "query": f"{query} research paper PDF arXiv",
+            "query": query,
             "search_depth": "basic",
             "max_results": max_results,
             "include_answer": False,
