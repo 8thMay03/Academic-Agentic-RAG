@@ -17,9 +17,7 @@ class FakeCompletionsClient:
         self.temperature = temperature
         if stream:
             return self._stream_response()
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="## Problem\n- Test summary."))]
-        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Grounded answer."))])
 
     async def _stream_response(self):
         for token in ["Hello", " world"]:
@@ -41,13 +39,13 @@ async def test_llm_service_completes_prompt_with_openai_client() -> None:
     client = FakeOpenAIClient()
     service = LLMService(client=client, model="gpt-test")
 
-    response = await service.complete("Summarize this paper.")
+    response = await service.complete("Answer from retrieved context.")
 
-    assert response == "## Problem\n- Test summary."
+    assert response == "Grounded answer."
     assert client.chat.completions.model == "gpt-test"
     assert client.chat.completions.messages[-1] == {
         "role": "user",
-        "content": "Summarize this paper.",
+        "content": "Answer from retrieved context.",
     }
     assert client.chat.completions.temperature == 0.2
 
@@ -72,4 +70,4 @@ async def test_llm_service_requires_api_key_without_injected_client() -> None:
     service = LLMService(api_key="")
 
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
-        await service.complete("Summarize this paper.")
+        await service.complete("Answer from retrieved context.")

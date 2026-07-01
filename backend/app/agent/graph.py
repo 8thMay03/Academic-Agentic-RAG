@@ -1,111 +1,66 @@
-from app.models.research import ResearchRequest, ResearchResponse
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from langgraph.graph import END, StateGraph
 
-from app.agent.nodes.compare_node import compare_node
-from app.agent.nodes.critic_node import critic_node
-from app.agent.nodes.download_node import download_node
-from app.agent.nodes.embed_node import embed_node
-from app.agent.nodes.intent_router_node import intent_router_node
-from app.agent.nodes.parse_node import parse_node
-from app.agent.nodes.planner_node import planner_node
-from app.agent.nodes.report_node import report_node
-from app.agent.nodes.search_node import search_node
-from app.agent.nodes.select_papers_node import select_papers_node
-from app.agent.nodes.summarize_node import summarize_node
-from app.agent.state import ResearchState
-from app.agent.workflow_router import (
-    route_after_compare,
-    route_after_critique,
-    route_after_intent,
-    route_after_search,
-    route_after_summarize,
-)
+from app.agent.nodes.answer_node import answer_node
+from app.agent.nodes.local_retrieve_node import local_retrieve_node
+from app.agent.nodes.quality_gate_node import quality_gate_node
+from app.agent.nodes.web_search_node import web_search_node
+from app.agent.state import AgenticRAGState
 
-
-async def run_research_workflow(request: ResearchRequest) -> ResearchResponse:
-    graph = build_research_graph()
-    initial_state: ResearchState = {
-        "query": request.query,
-        "max_results": request.max_results,
-    }
-    final_state = await graph.ainvoke(initial_state)
-    papers = final_state.get("selected_papers") or final_state.get("papers", [])
-    return ResearchResponse(
-        query=request.query,
-        papers=papers,
-        summary=final_state.get("summary"),
-        comparison=final_state.get("comparison"),
-        report=final_state.get("report"),
+if TYPE_CHECKING:
+    from app.services.agentic_chat_workflow import (
+        AgenticChatWorkflow,
+        ChatWorkflowRequest,
+        PreparedAnswer,
     )
 
 
-def build_research_graph():
-    workflow = StateGraph(ResearchState)
-
-    workflow.add_node("intent_router", intent_router_node)
-    workflow.add_node("plan", planner_node)
-    workflow.add_node("search", search_node)
-    workflow.add_node("select_papers", select_papers_node)
-    workflow.add_node("download", download_node)
-    workflow.add_node("parse", parse_node)
-    workflow.add_node("embed", embed_node)
-    workflow.add_node("summarize", summarize_node)
-    workflow.add_node("compare", compare_node)
-    workflow.add_node("report", report_node)
-    workflow.add_node("critic", critic_node)
-
-    workflow.set_entry_point("intent_router")
-    workflow.add_conditional_edges(
-        "intent_router",
-        route_after_intent,
+async def run_agentic_rag_workflow(
+    workflow: AgenticChatWorkflow,
+    request: ChatWorkflowRequest,
+) -> PreparedAnswer:
+    graph = build_agentic_rag_graph()
+    final_state = await graph.ainvoke(
         {
-            "full_research": "plan",
-            "summarize": "plan",
-            "compare": "plan",
-            "question_answering": "plan",
+            "workflow": workflow,
+            "request": request,
+            "trace": [],
+        }
+    )
+    return workflow._prepared_answer(
+        prompt=final_state.get("prompt"),
+        citations=final_state.get("citations", []),
+        trace=final_state.get("trace", []),
+    )
+
+
+def build_agentic_rag_graph():
+    graph = StateGraph(AgenticRAGState)
+
+    graph.add_node("local_retrieve", local_retrieve_node)
+    graph.add_node("quality_gate", quality_gate_node)
+    graph.add_node("web_search", web_search_node)
+    graph.add_node("answer", answer_node)
+
+    graph.set_entry_point("local_retrieve")
+    graph.add_edge("local_retrieve", "quality_gate")
+    graph.add_conditional_edges(
+        "quality_gate",
+        route_after_quality_gate,
+        {
+            "web_search": "web_search",
+            "answer": "answer",
         },
     )
-    workflow.add_edge("plan", "search")
-    workflow.add_conditional_edges(
-        "search",
-        route_after_search,
-        {
-            "search": "search",
-            "select_papers": "select_papers",
-        },
-    )
-    workflow.add_edge("select_papers", "download")
-    workflow.add_edge("download", "parse")
-    workflow.add_edge("parse", "embed")
-    workflow.add_edge("embed", "summarize")
-    workflow.add_conditional_edges(
-        "summarize",
-        route_after_summarize,
-        {
-            "compare": "compare",
-            "report": "report",
-            "critic": "critic",
-        },
-    )
-    workflow.add_conditional_edges(
-        "compare",
-        route_after_compare,
-        {
-            "report": "report",
-            "critic": "critic",
-        },
-    )
-    workflow.add_edge("report", "critic")
-    workflow.add_conditional_edges(
-        "critic",
-        route_after_critique,
-        {
-            "search": "search",
-            "summarize": "summarize",
-            "compare": "compare",
-            "report": "report",
-            "end": END,
-        },
-    )
+    graph.add_edge("web_search", "answer")
+    graph.add_edge("answer", END)
 
-    return workflow.compile()
+    return graph.compile()
+
+
+def route_after_quality_gate(state: AgenticRAGState) -> str:
+    quality = state["quality"]
+    return "answer" if quality.sufficient else "web_search"

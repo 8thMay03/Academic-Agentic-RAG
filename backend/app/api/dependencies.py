@@ -1,30 +1,16 @@
+from app.services.agentic_chat_workflow import AgenticChatWorkflow
 from app.services.chat_service import ChatService
-from app.services.compare_service import CompareService
 from app.services.llm_service import LLMService
 from app.services.pdf_service import PDFService
 from app.services.pdf_index_service import PDFIndexService
 from app.services.rag_service import RAGService
 from app.services.retriever_service import RetrieverService
-from app.services.search_service import SearchService
-from app.services.summary_service import SummaryService
 from app.services.web_search_service import WebSearchService
 from app.storage.chat_history_store import ChatHistoryStore
 
 
-def get_search_service() -> SearchService:
-    return SearchService()
-
-
 def get_llm_service() -> LLMService:
     return LLMService()
-
-
-def get_summary_service() -> SummaryService:
-    return SummaryService(get_llm_service())
-
-
-def get_compare_service() -> CompareService:
-    return CompareService(get_llm_service())
 
 
 def get_pdf_service() -> PDFService:
@@ -45,8 +31,12 @@ def get_rag_service() -> RAGService:
 
 def get_chat_service() -> ChatService:
     llm_service = get_llm_service()
-    return ChatService(RAGService(get_retriever_service(), llm_service), llm_service, WebSearchService())
-
+    workflow = AgenticChatWorkflow(
+        RAGService(get_retriever_service(), llm_service),
+        llm_service,
+        WebSearchService(),
+    )
+    return ChatService(workflow)
 
 
 def get_chat_history_store() -> ChatHistoryStore:

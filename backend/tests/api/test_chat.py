@@ -109,7 +109,7 @@ class FakeChatHistoryStore:
         ]
         self.session = ChatSession(
             chat_id="chat-1",
-            title="Research chat",
+            title="Agentic RAG chat",
             sources=[ChatSource(paper_id="paper-1", title="Agentic RAG.pdf")],
             messages=self.messages,
             created_at="2026-01-01T00:00:00+00:00",
