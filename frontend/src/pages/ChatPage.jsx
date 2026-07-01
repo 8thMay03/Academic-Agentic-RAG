@@ -356,58 +356,60 @@ export default function ChatPage({ onBackHome, initialPaper }) {
           </div>
         </header>
 
-        <div className="chat-body">
-          {!activeChat ? (
-            <div className="chat-welcome">
-              <div className="welcome-icon">
-                <Bot size={28} aria-hidden="true" />
+        <div className="chat-workspace">
+          <div className="chat-body">
+            {!activeChat ? (
+              <div className="chat-welcome">
+                <div className="welcome-icon">
+                  <Bot size={28} aria-hidden="true" />
+                </div>
+                <h2>Bạn cần hỗ trợ gì hôm nay?</h2>
+                <p>Chọn một cuộc trò chuyện hoặc tạo mới, thêm paper làm nguồn, rồi hỏi AI.</p>
+                <button className="btn-primary" onClick={createNewChat} type="button">
+                  <Plus size={16} aria-hidden="true" />
+                  Bắt đầu cuộc trò chuyện
+                </button>
               </div>
-              <h2>Bạn cần hỗ trợ gì hôm nay?</h2>
-              <p>Chọn một cuộc trò chuyện hoặc tạo mới, thêm paper làm nguồn, rồi hỏi AI.</p>
-              <button className="btn-primary" onClick={createNewChat} type="button">
-                <Plus size={16} aria-hidden="true" />
-                Bắt đầu cuộc trò chuyện
-              </button>
-            </div>
-          ) : (
-            <ChatMessages
-              activeChat={activeChat}
-              canChat={canChat}
-              chatState={chatState}
-              onOpenCitation={openCitation}
-              sourceState={sourceState}
-            />
-          )}
-        </div>
-
-        {activeChat ? (
-          <form className="chat-composer" onSubmit={handleAsk}>
-            <div className="composer-box">
-              <textarea
-                disabled={!canChat || chatState.loading}
-                onChange={(event) => setQuestion(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    event.currentTarget.form?.requestSubmit();
-                  }
-                }}
-                placeholder={canChat ? "Nhắn tin cho AI..." : "Thêm ít nhất một paper trước khi chat"}
-                rows={1}
-                value={question}
+            ) : (
+              <ChatMessages
+                activeChat={activeChat}
+                canChat={canChat}
+                chatState={chatState}
+                onOpenCitation={openCitation}
+                sourceState={sourceState}
               />
-              <button
-                aria-label="Gửi"
-                className="composer-send"
-                disabled={!canChat || !question.trim() || chatState.loading}
-                type="submit"
-              >
-                <Send size={18} aria-hidden="true" />
-              </button>
-            </div>
-            <p className="composer-hint">Enter để gửi · Shift+Enter để xuống dòng</p>
-          </form>
-        ) : null}
+            )}
+          </div>
+
+          {activeChat ? (
+            <form className="chat-composer" onSubmit={handleAsk}>
+              <div className="composer-box">
+                <textarea
+                  disabled={!canChat || chatState.loading}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      event.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  placeholder={canChat ? "Nhắn tin cho AI..." : "Thêm ít nhất một paper trước khi chat"}
+                  rows={1}
+                  value={question}
+                />
+                <button
+                  aria-label="Gửi"
+                  className="composer-send"
+                  disabled={!canChat || !question.trim() || chatState.loading}
+                  type="submit"
+                >
+                  <Send size={18} aria-hidden="true" />
+                </button>
+              </div>
+              <p className="composer-hint">Enter để gửi · Shift+Enter để xuống dòng</p>
+            </form>
+          ) : null}
+        </div>
       </main>
 
       {sourcePanelOpen ? (
