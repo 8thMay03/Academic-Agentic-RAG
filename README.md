@@ -1,4 +1,4 @@
-# AI Research Assistant
+# Academic Agentic RAG
 
 Trợ lý nghiên cứu học thuật giúp quản lý paper PDF local, hỏi đáp có trích dẫn (RAG), và bổ sung tri thức từ web khi knowledge base chưa đủ.
 
@@ -181,11 +181,29 @@ python scripts/reindex.py     # Re-index toàn bộ
 python scripts/clean_data.py  # Dọn dữ liệu local
 ```
 
-## Docker (tùy chọn)
+## Docker (khuyến nghị)
+
+Chạy cả frontend và backend bằng một lệnh:
+
+```bash
+# Tạo file env (lần đầu)
+cp backend/.env.example backend/.env   # điền OPENAI_API_KEY, TAVILY_API_KEY
+
+docker compose up --build
+```
+
+| Dịch vụ | URL |
+|---------|-----|
+| Giao diện web | http://localhost:5173 |
+| API trực tiếp | http://localhost:8000/api/v1 |
+
+Frontend proxy `/api` tới backend trong Docker network — không cần cấu hình `VITE_API_BASE_URL` thủ công.
+
+Dữ liệu PDF/Chroma được mount tại `backend/data/`.
+
+Chỉ chạy backend (tùy chọn):
 
 ```bash
 cd backend/docker
 docker compose up
 ```
-
-Xem [`backend/docker/docker-compose.yml`](backend/docker/docker-compose.yml).

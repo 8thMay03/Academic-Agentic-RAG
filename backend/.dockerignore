@@ -1,0 +1,16 @@
+__pycache__
+*.py[cod]
+.venv
+.env
+.git
+.pytest_cache
+.ruff_cache
+tests
+data/chroma/*
+data/chunks/*
+data/metadata/*
+data/pdfs/*
+!data/chroma/.gitkeep
+!data/chunks/.gitkeep
+!data/metadata/.gitkeep
+!data/pdfs/.gitkeep
