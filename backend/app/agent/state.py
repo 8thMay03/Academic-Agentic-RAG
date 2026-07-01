@@ -6,7 +6,6 @@ class AgenticRAGState(TypedDict, total=False):
     request: Any
     local_chunks: list[dict]
     web_chunks: list[dict]
-    web_papers: list[Any]
     quality: Any
     citations: list[Any]
     prompt: str | None

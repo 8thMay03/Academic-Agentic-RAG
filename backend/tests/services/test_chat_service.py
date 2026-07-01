@@ -57,7 +57,7 @@ class FakeWebSearchService:
         self.sources = sources or []
         self.calls = []
 
-    async def search_papers(self, query: str, max_results: int = 5) -> WebSearchResult:
+    async def search(self, query: str, max_results: int = 5) -> WebSearchResult:
         self.calls.append({"query": query, "max_results": max_results})
         return WebSearchResult(sources=self.sources)
 
@@ -169,7 +169,6 @@ async def test_chat_service_falls_back_to_web_when_local_context_is_missing() ->
     assert result.trace[2] == {
         "stage": "web_search",
         "chunk_count": 1,
-        "paper_count": 0,
         "trigger": "no_local_context",
     }
     assert "Agentic RAG uses agent planning" in llm.prompts[0]
@@ -267,7 +266,6 @@ async def test_chat_workflow_searches_web_when_llm_self_check_rejects_context() 
     assert result.trace[1]["reason"] == "llm_self_check_failed"
     assert result.trace[1]["self_check_passed"] is False
     assert result.trace[2]["trigger"] == "llm_self_check_failed"
-    assert result.trace[2]["paper_count"] == 0
     assert web.calls == [{"query": "How does planning retrieve evidence?", "max_results": 5}]
 
 
