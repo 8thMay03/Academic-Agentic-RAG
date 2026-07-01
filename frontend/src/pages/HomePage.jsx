@@ -24,7 +24,7 @@ export default function HomePage({
           </span>
           <div>
             <p className="brand-eyebrow">Thư viện nghiên cứu</p>
-            <h1>Paper đã lưu</h1>
+            <h1>Kho tài liệu</h1>
           </div>
         </div>
         <div className="home-actions">
