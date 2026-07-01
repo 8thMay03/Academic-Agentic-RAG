@@ -49,6 +49,7 @@ async def test_agentic_rag_graph_routes_to_web_when_local_context_is_insufficien
         "local_retrieve",
         "quality_gate",
         "web_search",
+        "knowledge_ingest",
         "answer",
     ]
     assert result.trace[1]["reason"] == "no_local_context"

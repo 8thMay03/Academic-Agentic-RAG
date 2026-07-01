@@ -1,13 +1,23 @@
+import logging
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from pathlib import Path
 
+from app.config.settings import settings
 from app.models.chat import ChatHistoryMessage
+from app.models.chunk import Chunk
 from app.models.citation import Citation
+from app.models.paper import Paper
 from app.services.llm_service import LLMService
+from app.services.pdf_index_service import PDFIndexService
+from app.services.pdf_service import PDFService
 from app.services.rag_service import RAGService
 from app.services.web_search_service import WebSearchService
 from app.vectorstore.bm25 import tokenize
+from app.vectorstore.indexing import index_chunks
+
+logger = logging.getLogger(__name__)
 
 UNKNOWN_ANSWER = "I don't know"
 MAX_HISTORY_MESSAGES = 6
@@ -82,10 +92,14 @@ class AgenticChatWorkflow:
         rag_service: RAGService,
         llm_service: LLMService,
         web_search_service: WebSearchService | None = None,
+        pdf_service: PDFService | None = None,
+        pdf_index_service: PDFIndexService | None = None,
     ) -> None:
         self._rag_service = rag_service
         self._llm_service = llm_service
         self._web_search_service = web_search_service or WebSearchService()
+        self._pdf_service = pdf_service or PDFService()
+        self._pdf_index_service = pdf_index_service or PDFIndexService()
 
     async def run(self, request: ChatWorkflowRequest) -> ChatWorkflowResult:
         prepared = await self.prepare_answer(request)
@@ -131,7 +145,7 @@ class AgenticChatWorkflow:
             chat_history=request.chat_history,
         )
 
-    async def _search_web(self, request: ChatWorkflowRequest) -> list[dict]:
+    async def _search_web(self, request: ChatWorkflowRequest) -> tuple[list[dict], list[Paper]]:
         result = await self._web_search_service.search_papers(
             request.question,
             max_results=request.top_k,
@@ -164,7 +178,56 @@ class AgenticChatWorkflow:
                     },
                 }
             )
-        return chunks
+        return chunks, result.papers
+
+    async def _ingest_web_snippets(self, web_chunks: list[dict]) -> int:
+        """Index web search snippets into ChromaDB for future retrieval."""
+        chunks_to_index: list[Chunk] = []
+        for chunk in web_chunks:
+            text = str(chunk.get("text") or "")
+            if not text or len(text) < 50:
+                continue
+            metadata = chunk.get("metadata") or {}
+            url = str(metadata.get("url") or "")
+            title = str(metadata.get("title") or "")
+            chunk_id = f"web-ingest:{url or metadata.get('chunk_id', '')}"  # stable dedup key
+            chunks_to_index.append(
+                Chunk(
+                    chunk_id=chunk_id,
+                    paper_id=url or chunk_id,
+                    text=text,
+                    metadata={
+                        "chunk_id": chunk_id,
+                        "title": title,
+                        "url": url,
+                        "source": "web",
+                    },
+                )
+            )
+        if chunks_to_index:
+            await index_chunks(chunks_to_index)
+        return len(chunks_to_index)
+
+    async def _ingest_arxiv_paper(self, paper: Paper) -> bool:
+        """Download and index an arXiv paper into the local knowledge base.
+
+        Returns True if the paper was successfully indexed (or was already cached).
+        """
+        if not paper.pdf_url:
+            return False
+
+        pdf_dir = Path(settings.DATA_DIR) / "pdfs"
+        pdf_dir.mkdir(parents=True, exist_ok=True)
+
+        path = await self._pdf_service.download_pdf(str(paper.pdf_url), pdf_dir)
+        result = await self._pdf_index_service.index_pdf(path)
+        logger.info(
+            "Ingested arXiv paper %s (%d chunks, cached=%s)",
+            paper.paper_id,
+            result.chunks_indexed,
+            result.cached,
+        )
+        return True
 
     async def _evaluate_context(
         self,
