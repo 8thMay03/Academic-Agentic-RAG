@@ -110,66 +110,17 @@ class AgenticChatWorkflow:
         return self._llm_service.stream_complete(prepared.prompt), prepared.citations, prepared.trace
 
     async def prepare_answer(self, request: ChatWorkflowRequest) -> PreparedAnswer:
-        trace: list[dict] = []
+        from app.agent.graph import run_agentic_rag_workflow
 
-        local_chunks = await self._retrieve_local(request)
-        trace.append(
-            {
-                "stage": "local_retrieve",
-                "chunk_count": len(local_chunks),
-                "paper_ids": request.paper_ids,
-            }
-        )
+        return await run_agentic_rag_workflow(self, request)
 
-        quality = await self._evaluate_context(request, local_chunks)
-        trace.append(
-            {
-                "stage": "quality_gate",
-                "sufficient": quality.sufficient,
-                "reason": quality.reason,
-                "chunk_count": quality.chunk_count,
-                "context_chars": quality.context_chars,
-                "top_score": quality.top_score,
-                "average_score": quality.average_score,
-                "source_count": quality.source_count,
-                "query_coverage": quality.query_coverage,
-                "self_check_used": quality.self_check_used,
-                "self_check_passed": quality.self_check_passed,
-            }
-        )
-
-        web_chunks: list[dict] = []
-        if not quality.sufficient:
-            web_chunks = await self._search_web(request)
-            trace.append(
-                {
-                    "stage": "web_search",
-                    "chunk_count": len(web_chunks),
-                    "trigger": quality.reason,
-                }
-            )
-
-        chunks = local_chunks if quality.sufficient else [*local_chunks, *web_chunks]
-        if not quality.sufficient and not web_chunks:
-            chunks = []
-        if not chunks:
-            trace.append({"stage": "answer", "status": "no_context"})
-            return PreparedAnswer(prompt=None, citations=[], trace=trace)
-
-        citations = self._citations(chunks, request.question)
-        trace.append(
-            {
-                "stage": "answer",
-                "status": "ready",
-                "context_count": len(chunks),
-                "citation_count": len(citations),
-            }
-        )
-        return PreparedAnswer(
-            prompt=self._build_prompt(request.question, chunks, request.chat_history),
-            citations=citations,
-            trace=trace,
-        )
+    @staticmethod
+    def _prepared_answer(
+        prompt: str | None,
+        citations: list[Citation],
+        trace: list[dict],
+    ) -> PreparedAnswer:
+        return PreparedAnswer(prompt=prompt, citations=citations, trace=trace)
 
     async def _retrieve_local(self, request: ChatWorkflowRequest) -> list[dict]:
         return await self._rag_service.retrieve_context(
