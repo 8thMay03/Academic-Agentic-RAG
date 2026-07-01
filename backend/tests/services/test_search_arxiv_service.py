@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.search_service import SearchService
+from app.services.search_arxiv_service import SearchArxivService
 
 
 class FakeSortCriterion:
@@ -58,7 +58,7 @@ async def test_searches_arxiv_and_maps_paper_fields() -> None:
         SortOrder=FakeSortOrder,
     )
     fake_client = FakeClient()
-    service = SearchService(client=fake_client, arxiv_module=fake_arxiv)
+    service = SearchArxivService(client=fake_client, arxiv_module=fake_arxiv)
 
     papers = await service.search("Agentic RAG", max_results=5, sort_by="submittedDate")
 

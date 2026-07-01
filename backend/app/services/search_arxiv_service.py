@@ -5,7 +5,7 @@ from typing import Any
 from app.models.paper import Paper
 
 
-class SearchService:
+class SearchArxivService:
     def __init__(self, client: Any | None = None, arxiv_module: Any | None = None) -> None:
         self._client = client
         self._arxiv_module = arxiv_module
