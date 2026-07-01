@@ -14,7 +14,29 @@ MAX_HISTORY_MESSAGES = 6
 MAX_HISTORY_CHARS = 2000
 MIN_CONTEXT_CHUNKS = 2
 MIN_CONTEXT_CHARS = 600
+MIN_TOP_SCORE = 0.45
+MIN_AVERAGE_SCORE = 0.35
+MIN_QUERY_COVERAGE = 0.25
+STRONG_TOP_SCORE = 0.75
+STRONG_QUERY_COVERAGE = 0.5
 CITATION_PATTERN = re.compile(r"\[([^\[\]]+)\]")
+LATEST_QUERY_TERMS = {
+    "latest",
+    "current",
+    "recent",
+    "today",
+    "now",
+    "newest",
+    "state of the art",
+    "sota",
+    "mới nhất",
+    "gan day",
+    "gần đây",
+    "hien tai",
+    "hiện tại",
+    "hom nay",
+    "hôm nay",
+}
 
 
 @dataclass(frozen=True)
@@ -32,6 +54,12 @@ class ContextQuality:
     chunk_count: int
     context_chars: int
     reason: str
+    top_score: float | None = None
+    average_score: float | None = None
+    source_count: int = 0
+    query_coverage: float = 0.0
+    self_check_used: bool = False
+    self_check_passed: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -93,7 +121,7 @@ class AgenticChatWorkflow:
             }
         )
 
-        quality = self._evaluate_context(local_chunks)
+        quality = await self._evaluate_context(request, local_chunks)
         trace.append(
             {
                 "stage": "quality_gate",
@@ -101,6 +129,12 @@ class AgenticChatWorkflow:
                 "reason": quality.reason,
                 "chunk_count": quality.chunk_count,
                 "context_chars": quality.context_chars,
+                "top_score": quality.top_score,
+                "average_score": quality.average_score,
+                "source_count": quality.source_count,
+                "query_coverage": quality.query_coverage,
+                "self_check_used": quality.self_check_used,
+                "self_check_passed": quality.self_check_passed,
             }
         )
 
@@ -115,7 +149,9 @@ class AgenticChatWorkflow:
                 }
             )
 
-        chunks = [*local_chunks, *web_chunks]
+        chunks = local_chunks if quality.sufficient else [*local_chunks, *web_chunks]
+        if not quality.sufficient and not web_chunks:
+            chunks = []
         if not chunks:
             trace.append({"stage": "answer", "status": "no_context"})
             return PreparedAnswer(prompt=None, citations=[], trace=trace)
@@ -179,14 +215,132 @@ class AgenticChatWorkflow:
             )
         return chunks
 
-    @staticmethod
-    def _evaluate_context(chunks: list[dict]) -> ContextQuality:
+    async def _evaluate_context(
+        self,
+        request: ChatWorkflowRequest,
+        chunks: list[dict],
+    ) -> ContextQuality:
         context_chars = sum(len(str(chunk.get("text") or "")) for chunk in chunks)
-        if len(chunks) >= MIN_CONTEXT_CHUNKS:
-            return ContextQuality(True, len(chunks), context_chars, "enough_chunks")
-        if context_chars >= MIN_CONTEXT_CHARS:
-            return ContextQuality(True, len(chunks), context_chars, "enough_context_chars")
-        return ContextQuality(False, len(chunks), context_chars, "insufficient_local_context")
+        top_score = self._top_score(chunks)
+        average_score = self._average_score(chunks)
+        source_count = self._source_count(chunks)
+        query_coverage = self._query_coverage(request.question, chunks)
+        base_quality = {
+            "chunk_count": len(chunks),
+            "context_chars": context_chars,
+            "top_score": top_score,
+            "average_score": average_score,
+            "source_count": source_count,
+            "query_coverage": query_coverage,
+        }
+
+        if self._requires_fresh_context(request.question):
+            return ContextQuality(
+                False,
+                reason="latest_query_requires_web",
+                **base_quality,
+            )
+        if not chunks:
+            return ContextQuality(False, reason="no_local_context", **base_quality)
+        if len(chunks) < MIN_CONTEXT_CHUNKS and context_chars < MIN_CONTEXT_CHARS:
+            return ContextQuality(False, reason="insufficient_local_context", **base_quality)
+        if top_score is not None and top_score < MIN_TOP_SCORE:
+            return ContextQuality(False, reason="low_top_score", **base_quality)
+        if average_score is not None and average_score < MIN_AVERAGE_SCORE:
+            return ContextQuality(False, reason="low_average_score", **base_quality)
+        if query_coverage < MIN_QUERY_COVERAGE:
+            return ContextQuality(False, reason="low_query_coverage", **base_quality)
+
+        if self._should_self_check(top_score, query_coverage):
+            self_check_passed = await self._self_check_context(request.question, chunks)
+            return ContextQuality(
+                self_check_passed,
+                reason="llm_self_check_passed" if self_check_passed else "llm_self_check_failed",
+                self_check_used=True,
+                self_check_passed=self_check_passed,
+                **base_quality,
+            )
+
+        return ContextQuality(True, reason="strong_context", **base_quality)
+
+    async def _self_check_context(self, question: str, chunks: list[dict]) -> bool:
+        prompt = self._self_check_prompt(question, chunks)
+        try:
+            response = (await self._llm_service.complete(prompt)).strip().lower()
+        except Exception:
+            return False
+        return response.startswith("yes") or '"sufficient": true' in response
+
+    @staticmethod
+    def _self_check_prompt(question: str, chunks: list[dict], max_chars: int = 4000) -> str:
+        context = "\n\n".join(
+            f"[{index}] {str(chunk.get('text') or '')}"
+            for index, chunk in enumerate(chunks, start=1)
+        )[:max_chars]
+        return (
+            "Decide whether the retrieved context is sufficient to answer the question without web search.\n"
+            "Return only YES or NO.\n\n"
+            f"Question: {question}\n\n"
+            f"Retrieved context:\n{context}"
+        )
+
+    @staticmethod
+    def _should_self_check(top_score: float | None, query_coverage: float) -> bool:
+        if top_score is None:
+            return True
+        return top_score < STRONG_TOP_SCORE or query_coverage < STRONG_QUERY_COVERAGE
+
+    @staticmethod
+    def _top_score(chunks: list[dict]) -> float | None:
+        scores = [
+            score
+            for chunk in chunks
+            if (score := AgenticChatWorkflow._ranking_score(chunk)) is not None
+        ]
+        return max(scores) if scores else None
+
+    @staticmethod
+    def _average_score(chunks: list[dict]) -> float | None:
+        scores = [
+            score
+            for chunk in chunks
+            if (score := AgenticChatWorkflow._ranking_score(chunk)) is not None
+        ]
+        if not scores:
+            return None
+        return sum(scores) / len(scores)
+
+    @staticmethod
+    def _ranking_score(chunk: dict) -> float | None:
+        for key in ("rerank_score", "score", "vector_score", "keyword_score"):
+            score = AgenticChatWorkflow._optional_float(chunk.get(key))
+            if score is not None:
+                return score
+        return None
+
+    @staticmethod
+    def _source_count(chunks: list[dict]) -> int:
+        sources = set()
+        for chunk in chunks:
+            citation = chunk.get("citation") or {}
+            metadata = chunk.get("metadata") or {}
+            source = citation.get("paper_id") or metadata.get("paper_id") or metadata.get("title")
+            if source:
+                sources.add(str(source))
+        return len(sources)
+
+    @staticmethod
+    def _query_coverage(question: str, chunks: list[dict]) -> float:
+        query_terms = set(tokenize(question))
+        if not query_terms:
+            return 1.0
+        context_terms = set(tokenize(" ".join(str(chunk.get("text") or "") for chunk in chunks)))
+        return len(query_terms & context_terms) / len(query_terms)
+
+    @staticmethod
+    def _requires_fresh_context(question: str) -> bool:
+        normalized = " ".join(question.lower().split())
+        return any(term in normalized for term in LATEST_QUERY_TERMS)
 
     @staticmethod
     async def _single_token_stream(token: str) -> AsyncIterator[str]:

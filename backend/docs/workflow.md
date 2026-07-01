@@ -33,6 +33,7 @@ Implementation:
 - `ChatService` is an adapter that preserves the existing `answer` and `stream_answer` API.
 - Chat routes load chat history before the workflow and persist the final user/assistant exchange after the workflow returns.
 - When local context is insufficient, web snippets are converted into temporary cited context with chunk ids such as `web:1`.
+- The quality gate checks top retrieval score, average score, source count, query-term coverage, and latest/current wording. Borderline local context is verified with an LLM self-check before skipping web search.
 
 Current limitation:
 
