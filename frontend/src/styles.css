@@ -771,6 +771,14 @@ code {
   border-color: var(--copper);
 }
 
+.citation-pill-web {
+  cursor: pointer;
+}
+
+.citation-pill-web:hover {
+  color: var(--copper);
+}
+
 .citation-quality {
   font-size: 0.72rem;
   padding: 2px 6px;
@@ -792,6 +800,11 @@ code {
 .quality-low .citation-quality {
   background: #fde8e8;
   color: #7f1d1d;
+}
+
+.quality-web .citation-quality {
+  background: #e6eef7;
+  color: #25476a;
 }
 
 /* Composer */

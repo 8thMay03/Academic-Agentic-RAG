@@ -164,6 +164,7 @@ class AgenticChatWorkflow:
                         "paper_id": url or chunk_id,
                         "title": title,
                         "chunk_id": chunk_id,
+                        "url": url,
                         "text": text,
                     },
                 }
@@ -428,6 +429,7 @@ class AgenticChatWorkflow:
                     page_number=page_number,
                     page=page_number,
                     chunk_id=chunk_id,
+                    url=citation.get("url") or metadata.get("url"),
                     text=citation.get("text") or chunk.get("text"),
                     score=AgenticChatWorkflow._optional_float(chunk.get("score")),
                     rerank_score=AgenticChatWorkflow._optional_float(chunk.get("rerank_score")),

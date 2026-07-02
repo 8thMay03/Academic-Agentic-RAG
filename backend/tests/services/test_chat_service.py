@@ -164,6 +164,7 @@ async def test_chat_service_falls_back_to_web_when_local_context_is_missing() ->
     assert web.calls == [{"query": "How does Agentic RAG differ from CRAG?", "max_results": 4}]
     assert result.answer == "Agentic RAG plans retrieval; CRAG corrects retrieval [web:1]."
     assert result.citations[0].chunk_id == "web:1"
+    assert result.citations[0].url == "https://example.com/agentic-rag-crag"
     assert result.citations[0].retrieval_sources == ["web"]
     assert result.citations[0].evidence_quality == "web"
     assert result.trace[2] == {

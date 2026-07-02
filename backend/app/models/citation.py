@@ -7,6 +7,7 @@ class Citation(BaseModel):
     page_number: int | None = None
     page: int | None = None
     chunk_id: str | None = None
+    url: str | None = None
     text: str | None = None
     score: float | None = None
     rerank_score: float | None = None

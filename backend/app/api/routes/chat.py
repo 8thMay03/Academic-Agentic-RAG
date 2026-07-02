@@ -21,7 +21,7 @@ from app.storage.chat_history_store import ChatHistoryStore
 router = APIRouter()
 
 
-@router.post("", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse, response_model_exclude_none=True)
 async def chat_with_papers(
     request: ChatRequest,
     chat_service: ChatService = Depends(get_chat_service),
@@ -94,7 +94,7 @@ async def stream_chat_with_papers(
                     answer=answer,
                     citations=citations,
                 )
-            yield _stream_event("citations", citations=[citation.model_dump(mode="json") for citation in citations])
+            yield _stream_event("citations", citations=[citation.model_dump(mode="json", exclude_none=True) for citation in citations])
             yield _stream_event("done")
         except Exception as exc:
             yield _stream_event("error", message=str(exc))

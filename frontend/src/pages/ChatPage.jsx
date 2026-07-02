@@ -268,6 +268,11 @@ export default function ChatPage({ onBackHome, initialPaper }) {
   }
 
   function openCitation(citation) {
+    if (citation.url) {
+      window.open(citation.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+
     const source = activeChat?.sources.find(
       (candidate) =>
         candidate.paper_id === citation.paper_id ||
@@ -498,18 +503,24 @@ function ChatMessage({ message, onOpenCitation }) {
         </div>
         {message.citations?.length ? (
           <div className="citation-list">
-            {message.citations.map((citation) => (
-              <button
-                className={`citation-pill ${evidenceQualityClass(citation.evidence_quality)}`}
-                key={citation.chunk_id ?? `${citation.paper_id}-${citation.page_number}`}
-                onClick={() => onOpenCitation(citation)}
-                type="button"
-              >
-                {citation.title || citation.paper_id}
-                {citation.page_number ? ` · tr.${citation.page_number}` : ""}
-                <span className="citation-quality">{formatEvidenceQuality(citation.evidence_quality)}</span>
-              </button>
-            ))}
+            {message.citations.map((citation) => {
+              const isWebCitation = Boolean(citation.url);
+
+              return (
+                <button
+                  aria-label={isWebCitation ? `Mở nguồn web: ${citation.title || citation.url}` : undefined}
+                  className={`citation-pill ${isWebCitation ? "citation-pill-web" : ""} ${evidenceQualityClass(citation.evidence_quality)}`}
+                  key={citation.chunk_id ?? `${citation.paper_id}-${citation.page_number}`}
+                  onClick={() => onOpenCitation(citation)}
+                  title={isWebCitation ? citation.url : undefined}
+                  type="button"
+                >
+                  {citation.title || citation.paper_id}
+                  {citation.page_number ? ` · tr.${citation.page_number}` : ""}
+                  <span className="citation-quality">{formatEvidenceQuality(citation.evidence_quality)}</span>
+                </button>
+              );
+            })}
           </div>
         ) : null}
       </div>
