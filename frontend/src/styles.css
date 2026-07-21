@@ -502,6 +502,10 @@ code {
   background: rgba(255, 255, 255, 0.12);
 }
 
+.thread-item.active .thread-rename-form {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .thread-button {
   flex: 1;
   display: grid;
@@ -533,6 +537,7 @@ code {
   color: #8b95ab;
 }
 
+.thread-action,
 .thread-delete {
   padding: 8px;
   border-radius: 8px;
@@ -542,13 +547,53 @@ code {
 }
 
 .thread-item:hover .thread-delete,
-.thread-delete:focus-visible {
+.thread-item:hover .thread-action,
+.thread-delete:focus-visible,
+.thread-action:focus-visible {
   opacity: 1;
+}
+
+.thread-action:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e8ecf4;
 }
 
 .thread-delete:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #f5b8b8;
+}
+
+.thread-rename-form {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px 32px;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.thread-rename-form .thread-action {
+  opacity: 1;
+}
+
+.thread-rename-input {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  font: inherit;
+  font-size: 0.88rem;
+  outline: none;
+  padding: 0 8px;
+}
+
+.thread-rename-input:focus {
+  border-color: rgba(127, 156, 245, 0.75);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.18);
 }
 
 /* Chat main */
