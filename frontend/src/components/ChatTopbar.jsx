@@ -1,4 +1,4 @@
-import { Menu, Sparkles } from "lucide-react";
+import { Database, History, Menu, Sparkles, Trash2 } from "lucide-react";
 
 export default function ChatTopbar({
   activeChat,
@@ -21,12 +21,15 @@ export default function ChatTopbar({
         {activeChat ? (
           <>
             <button className="btn-ghost btn-sm" disabled={!activeChat.messages.length || chatLoading} onClick={onClearHistory} type="button">
+              <Trash2 size={14} aria-hidden="true" />
               Xóa tin nhắn
             </button>
             <button className="btn-ghost btn-sm" onClick={onOpenRuns} type="button">
+              <History size={14} aria-hidden="true" />
               Agent runs
             </button>
             <button className="btn-ghost btn-sm" onClick={onOpenSources} type="button">
+              <Database size={14} aria-hidden="true" />
               Nguồn tùy chọn ({activeChat.sources.length})
             </button>
           </>

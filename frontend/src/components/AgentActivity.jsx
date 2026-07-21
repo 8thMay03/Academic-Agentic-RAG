@@ -20,9 +20,10 @@ import { agentTraceDisplay } from "../utils/format.js";
 export default function AgentActivity({ trace, active = false }) {
   const phases = buildPhases(trace, active);
   const headline = activityHeadline(trace, active);
+  const isLive = active && trace.at(-1)?.stage !== "verify_answer";
 
   return (
-    <div className="agent-activity" aria-label="Agent activity">
+    <div className={`agent-activity ${isLive ? "agent-activity-live" : "agent-activity-complete"}`} aria-label="Agent activity">
       <div className="agent-activity-head">
         <span className="agent-live-dot" aria-hidden="true" />
         <span>{headline}</span>
@@ -124,7 +125,9 @@ function buildPhases(trace, active) {
 
   return phaseDefinitions.map((phase) => {
     const hasStarted = phase.stages.some((stage) => seenStages.has(stage));
-    const status = active && phase.id === latestPhaseId ? "active" : hasStarted ? "done" : "pending";
+    const hasTerminalVerification = phase.id === "verify" && seenStages.has("verify_answer");
+    const status =
+      active && phase.id === latestPhaseId && !hasTerminalVerification ? "active" : hasStarted ? "done" : "pending";
     return { ...phase, status };
   });
 }
@@ -143,6 +146,7 @@ function phaseForStage(stage) {
 function activityHeadline(trace, active) {
   const latest = trace.at(-1);
   if (!latest) return "Preparing agent run";
+  if (latest.stage === "verify_answer") return active ? "Grounding checked" : "Completed agent run";
   if (!active) return latest.stage === "verify_answer" ? "Completed agent run" : "Agent run paused";
 
   const labels = {
