@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.config.settings import settings
-from app.models.chat import ChatHistoryMessage, ChatSession, ChatSource, ChatThread
+from app.models.chat import ChatHistoryMessage, ChatSession, ChatSource, ChatThread, agent_trace_payload
 from app.models.citation import Citation
 from app.utils.file import safe_filename
 
@@ -113,6 +113,7 @@ class ChatHistoryStore:
         question: str,
         answer: str,
         citations: list[Citation],
+        trace: list[dict] | None = None,
     ) -> list[ChatHistoryMessage]:
         session = await self.get_session(paper_id)
         if session is None:
@@ -128,6 +129,7 @@ class ChatHistoryStore:
                     role="assistant",
                     content=answer,
                     citations=citations,
+                    trace=agent_trace_payload(trace or []),
                     created_at=created_at,
                 ),
             ]

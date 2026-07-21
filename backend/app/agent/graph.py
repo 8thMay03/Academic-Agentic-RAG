@@ -48,6 +48,32 @@ async def run_verified_agentic_rag_workflow(
     )
 
 
+async def stream_verified_agentic_rag_workflow(
+    workflow: AgenticChatWorkflow,
+    request: ChatWorkflowRequest,
+):
+    graph = build_agentic_rag_graph()
+    seen_trace_count = 0
+    final_state: AgenticRAGState = {}
+    async for state in graph.astream(workflow.initial_state(request), stream_mode="values"):
+        final_state = state
+        trace = state.get("trace", [])
+        for event in trace[seen_trace_count:]:
+            yield {"type": "agent_step", "step": event}
+        seen_trace_count = len(trace)
+
+    answer = final_state.get("answer") or UNKNOWN_ANSWER
+    citations = final_state.get("citations", []) if final_state.get("answer") else []
+    yield {
+        "type": "result",
+        "result": ChatWorkflowResult(
+            answer=answer,
+            citations=citations,
+            trace=final_state.get("trace", []),
+        ),
+    }
+
+
 def build_agentic_rag_graph():
     graph = StateGraph(AgenticRAGState)
 

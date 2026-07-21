@@ -85,6 +85,20 @@ class AgenticChatWorkflow:
             result.trace,
         )
 
+    async def stream_events(self, request: ChatWorkflowRequest):
+        from app.agent.graph import stream_verified_agentic_rag_workflow
+
+        async for event in stream_verified_agentic_rag_workflow(self, request):
+            if event["type"] == "agent_step":
+                yield event
+                continue
+
+            result = event["result"]
+            async for token in self._token_stream(result.answer):
+                yield {"type": "token", "content": token}
+            yield {"type": "citations", "citations": result.citations}
+            yield {"type": "result", "result": result}
+
     @staticmethod
     async def _token_stream(answer: str) -> AsyncIterator[str]:
         words = answer.split(" ")

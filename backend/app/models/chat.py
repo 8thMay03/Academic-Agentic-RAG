@@ -75,6 +75,7 @@ class ChatHistoryMessage(BaseModel):
     role: str
     content: str
     citations: list[Citation] = Field(default_factory=list)
+    trace: list[AgentTraceEventResponse] = Field(default_factory=list)
     created_at: str
 
 

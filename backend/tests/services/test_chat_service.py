@@ -473,6 +473,28 @@ async def test_chat_service_streams_answer_tokens_with_citations() -> None:
 
 
 @pytest.mark.asyncio
+async def test_chat_service_stream_events_emits_agent_steps_before_tokens() -> None:
+    rag = FakeRAGService(SUFFICIENT_LOCAL_CHUNKS)
+    llm = FakeLLMService("It uses planning [paper-1:p3:c0].")
+    workflow = AgenticChatWorkflow(rag, llm, FakeWebSearchService())
+    service = ChatService(workflow)
+
+    events = []
+    async for event in service.stream_events("How does planning retrieve evidence?"):
+        events.append(event)
+
+    event_types = [event["type"] for event in events]
+    first_token_index = event_types.index("token")
+    first_citation_index = event_types.index("citations")
+
+    assert event_types[:first_token_index] == ["agent_step"] * first_token_index
+    assert events[0]["step"]["stage"] == "classify_intent"
+    assert any(event["type"] == "agent_step" and event["step"]["stage"] == "verify_answer" for event in events)
+    assert first_token_index < first_citation_index
+    assert events[-1]["type"] == "result"
+
+
+@pytest.mark.asyncio
 async def test_chat_service_removes_invalid_citations_from_answer() -> None:
     rag = FakeRAGService(SUFFICIENT_LOCAL_CHUNKS)
     llm = FakeLLMService("It uses planning [made-up:p1:c0].")

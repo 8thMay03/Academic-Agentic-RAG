@@ -153,6 +153,43 @@ class FakeChatService:
             RAW_FAKE_TRACE,
         )
 
+    async def stream_events(
+        self,
+        question: str,
+        paper_ids: list[str] | None = None,
+        top_k: int = 5,
+        score_threshold: float = 0.65,
+        chat_history: list[ChatHistoryMessage] | None = None,
+        max_agent_steps: int = 6,
+        enable_web_search: bool = True,
+        enable_research_ingest: bool = True,
+        auto_download_pdfs: bool = True,
+    ):
+        token_stream, citations, trace = await self.stream_answer(
+            question=question,
+            paper_ids=paper_ids,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            chat_history=chat_history,
+            max_agent_steps=max_agent_steps,
+            enable_web_search=enable_web_search,
+            enable_research_ingest=enable_research_ingest,
+            auto_download_pdfs=auto_download_pdfs,
+        )
+        for step in trace:
+            yield {"type": "agent_step", "step": step}
+        async for token in token_stream:
+            yield {"type": "token", "content": token}
+        yield {"type": "citations", "citations": citations}
+        yield {
+            "type": "result",
+            "result": ChatWorkflowResult(
+                answer="It uses planning.",
+                citations=citations,
+                trace=trace,
+            ),
+        }
+
 
 class FakeChatHistoryStore:
     def __init__(self) -> None:
@@ -173,12 +210,13 @@ class FakeChatHistoryStore:
             updated_at="2026-01-01T00:00:00+00:00",
         )
 
-    async def append_exchange(self, paper_id, question, answer, citations):
+    async def append_exchange(self, paper_id, question, answer, citations, trace=None):
         self.appended = {
             "paper_id": paper_id,
             "question": question,
             "answer": answer,
             "citations": citations,
+            "trace": trace,
         }
         return self.messages
 
@@ -284,6 +322,7 @@ def test_chat_with_papers_returns_answer_and_citations() -> None:
 
     assert history_store.appended["paper_id"] == "paper-1"
     assert history_store.appended["question"] == "What is the method?"
+    assert history_store.appended["trace"] == FAKE_TRACE
     assert agent_run_store.runs[0]["chat_id"] == "paper-1"
     assert agent_run_store.runs[0]["trace"] == FAKE_TRACE
     assert response.status_code == 200
@@ -370,6 +409,7 @@ def test_chat_session_without_sources_searches_all_local_documents() -> None:
         "trace": [{"stage": "local_retrieve", "chunk_count": 0}],
     }
     assert history_store.appended["paper_id"] == "chat-1"
+    assert history_store.appended["trace"] == [{"stage": "local_retrieve", "chunk_count": 0}]
     assert agent_run_store.runs[0]["chat_id"] == "chat-1"
 
 
@@ -410,12 +450,13 @@ def test_get_chat_history_returns_messages() -> None:
     assert response.json() == {
         "paper_id": "paper-1",
         "messages": [
-            {
-                "role": "user",
-                "content": "Previous question?",
-                "citations": [],
-                "created_at": "2026-01-01T00:00:00+00:00",
-            }
+                {
+                    "role": "user",
+                    "content": "Previous question?",
+                    "citations": [],
+                    "trace": [],
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                }
         ],
     }
 
@@ -582,12 +623,14 @@ def test_stream_chat_with_papers_returns_token_events_and_persists_history() -> 
     assert response.status_code == 200
     assert '"type": "agent_step", "stage": "local_retrieve"' in body
     assert '"type": "agent_step", "stage": "verify_answer"' in body
+    assert body.index('"type": "agent_step"') < body.index('"type": "token"')
     assert '"answer_chars": 47' in body
     assert "debug_prompt" not in body
     assert '"type": "token", "content": "It "' in body
     assert '"type": "citations"' in body
     assert '"type": "done"' in body
     assert history_store.appended["answer"] == "It uses planning."
+    assert history_store.appended["trace"] == FAKE_TRACE
     assert agent_run_store.runs[0]["answer"] == "It uses planning."
     assert agent_run_store.runs[0]["trace"] == FAKE_TRACE
 

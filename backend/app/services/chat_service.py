@@ -65,3 +65,30 @@ class ChatService:
                 auto_download_pdfs=auto_download_pdfs,
             )
         )
+
+    async def stream_events(
+        self,
+        question: str,
+        paper_ids: list[str] | None = None,
+        top_k: int = 5,
+        score_threshold: float = 0.65,
+        chat_history: list[ChatHistoryMessage] | None = None,
+        max_agent_steps: int = 6,
+        enable_web_search: bool = True,
+        enable_research_ingest: bool = True,
+        auto_download_pdfs: bool = True,
+    ):
+        async for event in self._workflow.stream_events(
+            ChatWorkflowRequest(
+                question=question,
+                paper_ids=paper_ids,
+                top_k=top_k,
+                score_threshold=score_threshold,
+                chat_history=chat_history,
+                max_agent_steps=max_agent_steps,
+                enable_web_search=enable_web_search,
+                enable_research_ingest=enable_research_ingest,
+                auto_download_pdfs=auto_download_pdfs,
+            )
+        ):
+            yield event

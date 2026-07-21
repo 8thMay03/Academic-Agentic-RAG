@@ -16,6 +16,7 @@ from app.models.chat import (
     ChatSourceAddRequest,
     ChatThreadListResponse,
     ResearchFindingListResponse,
+    agent_trace_event_payload,
     agent_trace_payload,
 )
 from app.services.chat_service import ChatService
@@ -61,6 +62,7 @@ async def chat_with_papers(
             question=request.question,
             answer=result.answer,
             citations=result.citations,
+            trace=trace,
         )
         await agent_run_store.append_run(
             chat_id=history_key,
@@ -92,8 +94,10 @@ async def stream_chat_with_papers(
 
     async def event_stream() -> AsyncIterator[str]:
         answer_parts: list[str] = []
+        citations = []
+        trace = []
         try:
-            token_stream, citations, trace = await chat_service.stream_answer(
+            async for event in chat_service.stream_events(
                 question=request.question,
                 paper_ids=paper_ids,
                 top_k=request.top_k,
@@ -103,13 +107,24 @@ async def stream_chat_with_papers(
                 enable_web_search=request.enable_web_search,
                 enable_research_ingest=request.enable_research_ingest,
                 auto_download_pdfs=request.auto_download_pdfs,
-            )
-            trace = agent_trace_payload(trace)
-            for event in trace:
-                yield _stream_event("agent_step", **event)
-            async for token in token_stream:
-                answer_parts.append(token)
-                yield _stream_event("token", content=token)
+            ):
+                if event["type"] == "agent_step":
+                    step = agent_trace_event_payload(event["step"])
+                    trace.append(step)
+                    yield _stream_event("agent_step", **step)
+                elif event["type"] == "token":
+                    token = event["content"]
+                    answer_parts.append(token)
+                    yield _stream_event("token", content=token)
+                elif event["type"] == "citations":
+                    citations = event["citations"]
+                    yield _stream_event(
+                        "citations",
+                        citations=[citation.model_dump(mode="json", exclude_none=True) for citation in citations],
+                    )
+                elif event["type"] == "result":
+                    result = event["result"]
+                    citations = result.citations
 
             answer = "".join(answer_parts)
             if history_key:
@@ -118,6 +133,7 @@ async def stream_chat_with_papers(
                     question=request.question,
                     answer=answer,
                     citations=citations,
+                    trace=trace,
                 )
                 await agent_run_store.append_run(
                     chat_id=history_key,
@@ -126,7 +142,6 @@ async def stream_chat_with_papers(
                     citations=citations,
                     trace=trace,
                 )
-            yield _stream_event("citations", citations=[citation.model_dump(mode="json", exclude_none=True) for citation in citations])
             yield _stream_event("done")
         except Exception as exc:
             yield _stream_event("error", message=str(exc))

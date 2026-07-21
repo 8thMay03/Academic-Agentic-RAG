@@ -8,10 +8,13 @@ async def draft_answer_node(state: AgenticRAGState) -> AgenticRAGState:
     citation_grounder = state["citation_grounder"]
     prompt_builder = state["prompt_builder"]
     evidence = state.get("evidence", [])
-    if evidence:
-        chunks = evidence
+    local_chunks = state.get("local_chunks", [])
+    web_chunks = state.get("web_chunks", [])
+
+    if web_chunks or state.get("refreshed_local_context"):
+        chunks = evidence or [*local_chunks, *web_chunks]
     elif quality.sufficient:
-        chunks = state.get("local_chunks", [])
+        chunks = evidence or local_chunks
     else:
         chunks = []
 
