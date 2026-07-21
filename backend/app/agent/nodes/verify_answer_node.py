@@ -19,10 +19,15 @@ def verification_trace_event(
 
 async def verify_answer_node(state: AgenticRAGState) -> AgenticRAGState:
     verifier = state["answer_verifier"]
+    citation_grounder = state["citation_grounder"]
     verification = verifier.verify(state.get("answer", ""), state.get("citations", []))
+    display_answer = citation_grounder.display_answer_with_numbered_citations(
+        verification.answer,
+        verification.citations,
+    )
     return {
         **state,
-        "answer": verification.answer,
+        "answer": display_answer,
         "citations": verification.citations,
         "verification": verification,
         "trace": verification_trace_event(state.get("trace", []), verification),

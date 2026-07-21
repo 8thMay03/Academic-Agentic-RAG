@@ -1,8 +1,10 @@
 import pytest
 
 from app.agent.models import AgentLimits, ResearchPlan, ResearchPlanStep, ToolResult
+from app.agent.tools.local_retrieve_tool import LocalRetrieveTool
 from app.agent.nodes.tool_executor_node import tool_executor_node
 from app.agent.tools.registry import ToolRegistry
+from app.agent.tools.web_search_tool import WebSearchTool
 from app.agent.workflow import AgenticChatWorkflow, ChatWorkflowRequest
 from tests.services.test_chat_service import (
     FakeLLMService,
@@ -82,7 +84,7 @@ async def test_agentic_rag_graph_answers_from_sufficient_local_context() -> None
     assert result.trace[2]["sufficient"] is True
     assert result.trace[-1]["status"] == "passed"
     assert web.calls == []
-    assert result.answer == "It uses planning [paper-1:p3:c0]."
+    assert result.answer == "It uses planning [1]."
 
 
 @pytest.mark.asyncio
@@ -98,7 +100,21 @@ async def test_agentic_rag_graph_routes_to_web_when_local_context_is_insufficien
         ]
     )
     llm = FakeLLMService("Agentic RAG plans retrieval [web:1].")
-    workflow = AgenticChatWorkflow(rag, llm, web)
+    registry = ToolRegistry(
+        [
+            LocalRetrieveTool(rag),
+            WebSearchTool(web),
+            StaticTool(
+                "web_snippet_ingest",
+                ToolResult(
+                    tool_name="web_snippet_ingest",
+                    success=True,
+                    metadata={"snippets_ingested": 1},
+                ),
+            ),
+        ]
+    )
+    workflow = AgenticChatWorkflow(rag, llm, web, tool_registry=registry)
 
     result = await workflow.run(ChatWorkflowRequest("How does Agentic RAG differ from CRAG?"))
 
@@ -224,7 +240,7 @@ async def test_agentic_rag_graph_uses_web_fallback_when_auto_pdf_download_is_dis
     assert result.trace[0]["intent"] == "fresh_research"
     assert result.trace[3]["step_count"] == 2
     assert web.calls == [{"query": "What is the latest Agentic RAG approach?", "max_results": 5}]
-    assert result.answer == "Fresh systems add reflection [web:1]."
+    assert result.answer == "Fresh systems add reflection [1]."
 
 
 @pytest.mark.asyncio
@@ -440,4 +456,4 @@ async def test_agentic_rag_graph_ingests_fresh_arxiv_pdf_then_retrieves_again() 
         }
     ]
     assert local_tool.calls == 2
-    assert result.answer == "Fresh systems add reflection [fresh-paper:p2:c0]."
+    assert result.answer == "Fresh systems add reflection [1]."

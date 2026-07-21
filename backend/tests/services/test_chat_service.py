@@ -213,7 +213,7 @@ async def test_chat_service_falls_back_to_web_when_local_context_is_missing() ->
     )
 
     assert web.calls == [{"query": "How does Agentic RAG differ from CRAG?", "max_results": 4}]
-    assert result.answer == "Agentic RAG plans retrieval; CRAG corrects retrieval [web:1]."
+    assert result.answer == "Agentic RAG plans retrieval; CRAG corrects retrieval [1]."
     assert result.citations[0].chunk_id == "web:1"
     assert result.citations[0].url == "https://example.com/agentic-rag-crag"
     assert result.citations[0].retrieval_sources == ["web"]
@@ -360,7 +360,7 @@ async def test_chat_workflow_uses_llm_self_check_for_borderline_context() -> Non
 
     result = await workflow.run(ChatWorkflowRequest("How does planning retrieve evidence?"))
 
-    assert result.answer == "It uses planning [paper-1:p3:c0]."
+    assert result.answer == "It uses planning [1]."
     assert result.trace[2]["reason"] == "llm_self_check_passed"
     assert result.trace[2]["self_check_used"] is True
     assert result.trace[2]["self_check_passed"] is True
@@ -390,7 +390,7 @@ async def test_chat_workflow_searches_web_when_llm_self_check_rejects_context() 
 
     result = await workflow.run(ChatWorkflowRequest("How does planning retrieve evidence?"))
 
-    assert result.answer == "Planning uses explicit evidence selection [web:1]."
+    assert result.answer == "Planning uses explicit evidence selection [1]."
     assert result.trace[2]["reason"] == "llm_self_check_failed"
     assert result.trace[2]["self_check_passed"] is False
     assert result.trace[3]["reason"] == "llm_self_check_failed"
@@ -407,7 +407,7 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
 
     result = await workflow.run(ChatWorkflowRequest("How does planning retrieve evidence?"))
 
-    assert result.answer == "It uses planning for retrieval decisions (p. 3). [paper-1:p3:c0]"
+    assert result.answer == "It uses planning for retrieval decisions (p. 3). [1]"
     assert web.calls == []
     assert result.trace[2]["sufficient"] is True
     citations = result.citations
@@ -462,7 +462,7 @@ async def test_chat_service_streams_answer_tokens_with_citations() -> None:
     token_stream, citations, trace = await service.stream_answer("How does planning retrieve evidence?")
     tokens = [token async for token in token_stream]
 
-    assert tokens == ["It ", "uses ", "planning ", "[paper-1:p3:c0]"]
+    assert tokens == ["It ", "uses ", "planning ", "[1]"]
     assert citations[0].paper_id == "paper-1"
     assert trace[0]["stage"] == "classify_intent"
     assert trace[1]["stage"] == "local_retrieve"
@@ -502,7 +502,7 @@ async def test_chat_service_removes_invalid_citations_from_answer() -> None:
 
     result = await workflow.run(ChatWorkflowRequest("How does planning retrieve evidence?"))
 
-    assert result.answer == "It uses planning. [paper-1:p3:c0]"
+    assert result.answer == "It uses planning. [1]"
     assert [citation.chunk_id for citation in result.citations] == ["paper-1:p3:c0"]
     assert result.trace[-1]["suggested_action"] == "revise_answer"
 
@@ -529,7 +529,7 @@ async def test_chat_workflow_retrieves_more_when_verifier_requests_more_evidence
 
     result = await workflow.run(ChatWorkflowRequest("How does Agentic RAG verify evidence?"))
 
-    assert result.answer == "Recovered web evidence explains verification [web:1]."
+    assert result.answer == "Recovered web evidence explains verification [1]."
     assert [citation.chunk_id for citation in result.citations] == ["web:1"]
     assert web.calls == [{"query": "How does Agentic RAG verify evidence?", "max_results": 5}]
     assert [event["stage"] for event in result.trace[-5:]] == [

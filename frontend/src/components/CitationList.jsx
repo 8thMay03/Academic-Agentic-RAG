@@ -5,7 +5,7 @@ export default function CitationList({ citations, onOpenCitation }) {
 
   return (
     <div className="citation-list">
-      {citations.map((citation) => {
+      {citations.map((citation, index) => {
         const isWebCitation = Boolean(citation.url);
         const badges = citationBadges(citation);
 
@@ -18,6 +18,7 @@ export default function CitationList({ citations, onOpenCitation }) {
             title={isWebCitation ? citation.url : undefined}
             type="button"
           >
+            <span className="citation-index">[{index + 1}]</span>
             {citation.title || citation.paper_id}
             {citation.page_number ? ` · tr.${citation.page_number}` : ""}
             <span className="citation-badges" aria-hidden="true">

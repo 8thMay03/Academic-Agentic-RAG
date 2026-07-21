@@ -78,6 +78,12 @@ async def run_tool_with_timeout(
             success=False,
             error=f"Tool timed out after {limits.tool_timeout_seconds:g}s.",
         )
+    except Exception as exc:
+        return ToolResult(
+            tool_name=tool_name,
+            success=False,
+            error=str(exc),
+        )
 
 
 def total_tool_count(state: dict[str, Any]) -> int:

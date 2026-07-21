@@ -104,6 +104,35 @@ class CitationGrounder:
             if chunk_id in citations_by_chunk_id
         ]
 
+    def display_answer_with_numbered_citations(self, answer: str, citations: list[Citation]) -> str:
+        if answer.strip() == UNKNOWN_ANSWER:
+            return answer
+
+        citation_numbers = {
+            chunk_id: index
+            for index, citation in enumerate(citations, start=1)
+            if (chunk_id := getattr(citation, "chunk_id", None))
+        }
+        if not citation_numbers:
+            return self._strip_citation_markers(answer)
+
+        def number_citations(match: re.Match[str]) -> str:
+            raw_citation_ids = re.split(r"[,;\s]+", match.group(1).strip())
+            numbers = []
+            seen_numbers = set()
+            for citation_id in raw_citation_ids:
+                number = citation_numbers.get(citation_id)
+                if number and number not in seen_numbers:
+                    seen_numbers.add(number)
+                    numbers.append(number)
+            if not numbers:
+                return ""
+            return "".join(f"[{number}]" for number in numbers)
+
+        display_answer = CITATION_PATTERN.sub(number_citations, answer).strip()
+        display_answer = " ".join(display_answer.split())
+        return re.sub(r"\s+([,.!?;:])", r"\1", display_answer)
+
     def _evidence_quality(self, chunk: RetrievedChunk) -> str:
         if "web" in set(chunk.get("retrieval_sources") or []):
             return "web"
@@ -147,3 +176,9 @@ class CitationGrounder:
                     seen_chunk_ids.add(citation_id)
                     chunk_ids.append(citation_id)
         return chunk_ids
+
+    @staticmethod
+    def _strip_citation_markers(answer: str) -> str:
+        stripped_answer = CITATION_PATTERN.sub("", answer).strip()
+        stripped_answer = " ".join(stripped_answer.split())
+        return re.sub(r"\s+([,.!?;:])", r"\1", stripped_answer)

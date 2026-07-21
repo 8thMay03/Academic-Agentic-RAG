@@ -1,6 +1,7 @@
 import pytest
 
 from app.agent.models import VerificationResult
+from app.agent.citations import CitationGrounder
 from app.agent.nodes.verify_answer_node import verification_trace_event, verify_answer_node
 
 
@@ -77,6 +78,7 @@ async def test_verify_answer_node_updates_answer_citations_and_trace():
     state = await verify_answer_node(
         {
             "answer_verifier": verifier,
+            "citation_grounder": CitationGrounder(),
             "answer": "Draft answer",
             "citations": citations,
             "trace": [{"stage": "draft_answer"}],
@@ -84,7 +86,7 @@ async def test_verify_answer_node_updates_answer_citations_and_trace():
     )
 
     assert verifier.calls == [{"answer": "Draft answer", "citations": citations}]
-    assert state["answer"] == "Draft answer [verified]"
+    assert state["answer"] == "Draft answer"
     assert state["citations"] == citations[:1]
     assert state["verification"].suggested_action == "finalize"
     assert state["trace"][-1] == {

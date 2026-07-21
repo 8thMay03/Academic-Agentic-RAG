@@ -901,6 +901,11 @@ code {
   color: var(--copper);
 }
 
+.citation-index {
+  color: var(--copper);
+  font-weight: 700;
+}
+
 .citation-quality {
   font-size: 0.72rem;
   padding: 2px 6px;

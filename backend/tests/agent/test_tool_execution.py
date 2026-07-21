@@ -14,6 +14,11 @@ class SlowToolRegistry:
         return ToolResult(tool_name=tool_name, success=True)
 
 
+class FailingToolRegistry:
+    async def run(self, tool_name: str, input: dict) -> ToolResult:
+        raise ValueError("Embedding service is unavailable.")
+
+
 def test_prepare_tool_input_injects_web_chunks_for_snippet_ingest():
     web_chunks = [{"id": "web:1"}]
 
@@ -159,4 +164,19 @@ async def test_run_tool_with_timeout_returns_structured_failure():
         tool_name="web_search",
         success=False,
         error="Tool timed out after 0.001s.",
+    )
+
+
+async def test_run_tool_with_timeout_returns_structured_exception_failure():
+    result = await run_tool_with_timeout(
+        FailingToolRegistry(),
+        "web_snippet_ingest",
+        {"web_chunks": []},
+        AgentLimits(tool_timeout_seconds=1),
+    )
+
+    assert result == ToolResult(
+        tool_name="web_snippet_ingest",
+        success=False,
+        error="Embedding service is unavailable.",
     )
