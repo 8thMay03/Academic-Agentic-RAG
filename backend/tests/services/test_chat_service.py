@@ -1,7 +1,9 @@
 import pytest
 
+from app.agent.models import ToolResult
+from app.agent.tools.registry import ToolRegistry
 from app.models.chat import ChatHistoryMessage
-from app.services.agentic_chat_workflow import (
+from app.agent.workflow import (
     UNKNOWN_ANSWER,
     AgenticChatWorkflow,
     ChatWorkflowRequest,
@@ -106,6 +108,47 @@ SECOND_RETRIEVED_CHUNK = {
 
 SUFFICIENT_LOCAL_CHUNKS = [RETRIEVED_CHUNK, SECOND_RETRIEVED_CHUNK]
 
+UNUSABLE_CITATION_CHUNKS = [
+    {
+        "text": "Agentic RAG planning retrieves evidence before answering.",
+        "score": 0.91,
+        "rerank_score": 0.91,
+    },
+    {
+        "text": "Agentic RAG planning retrieves evidence and verifies the answer.",
+        "score": 0.9,
+        "rerank_score": 0.9,
+    },
+]
+
+
+class SequenceLocalRetrieveTool:
+    name = "local_retrieve"
+
+    def __init__(self, chunks_by_call: list[list[dict]]) -> None:
+        self.chunks_by_call = chunks_by_call
+        self.calls = []
+
+    async def run(self, input: dict) -> ToolResult:
+        self.calls.append(input)
+        call_index = min(len(self.calls) - 1, len(self.chunks_by_call) - 1)
+        return ToolResult(
+            tool_name=self.name,
+            success=True,
+            chunks=self.chunks_by_call[call_index],
+        )
+
+
+class StaticTool:
+    def __init__(self, name: str, result: ToolResult) -> None:
+        self.name = name
+        self._result = result
+        self.calls = []
+
+    async def run(self, input: dict) -> ToolResult:
+        self.calls.append(input)
+        return self._result
+
 
 @pytest.mark.asyncio
 async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> None:
@@ -123,13 +166,21 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
     assert llm.prompts == []
     assert web.calls == [{"query": "What is the method?", "max_results": 3}]
     assert [event["stage"] for event in result.trace] == [
+        "classify_intent",
         "local_retrieve",
         "quality_gate",
-        "web_search",
-        "knowledge_ingest",
-        "answer",
+        "plan",
+        "execute_tool",
+        "observe",
+        "execute_tool",
+        "observe",
+        "draft_answer",
     ]
-    assert result.trace[1]["sufficient"] is False
+    assert result.trace[0]["intent"] == "research_qa"
+    assert result.trace[2]["sufficient"] is False
+    assert result.trace[3]["step_count"] == 2
+    assert result.trace[4]["tool_name"] == "web_search"
+    assert result.trace[6]["tool_name"] == "web_snippet_ingest"
     assert rag.calls == [
         {
             "question": "What is the method?",
@@ -167,35 +218,111 @@ async def test_chat_service_falls_back_to_web_when_local_context_is_missing() ->
     assert result.citations[0].url == "https://example.com/agentic-rag-crag"
     assert result.citations[0].retrieval_sources == ["web"]
     assert result.citations[0].evidence_quality == "web"
-    assert result.trace[2] == {
-        "stage": "web_search",
-        "chunk_count": 1,
-        "trigger": "no_local_context",
-    }
+    assert result.trace[2]["reason"] == "no_local_context"
+    assert result.trace[4]["tool_name"] == "web_search"
+    assert result.trace[5]["chunk_count"] == 1
     assert "Agentic RAG uses agent planning" in llm.prompts[0]
 
 
 @pytest.mark.asyncio
-async def test_chat_workflow_forces_web_for_latest_questions_even_with_local_context() -> None:
-    rag = FakeRAGService([RETRIEVED_CHUNK, {**RETRIEVED_CHUNK, "id": "paper-1:p4:c0"}])
-    web = FakeWebSearchService(
+async def test_chat_workflow_ingests_fresh_research_for_latest_questions() -> None:
+    fresh_chunk = {
+        **RETRIEVED_CHUNK,
+        "id": "fresh-paper:p2:c0",
+        "text": "A 2026 survey discusses the latest Agentic RAG systems.",
+        "metadata": {
+            **RETRIEVED_CHUNK["metadata"],
+            "paper_id": "fresh-paper",
+            "title": "Latest Agentic RAG survey",
+            "chunk_id": "fresh-paper:p2:c0",
+            "source_type": "arxiv",
+            "source_url": "https://arxiv.org/abs/2601.12345",
+            "pdf_url": "https://arxiv.org/pdf/2601.12345",
+            "trust_level": "high",
+            "ingestion_status": "downloaded",
+        },
+        "citation": {
+            **RETRIEVED_CHUNK["citation"],
+            "paper_id": "fresh-paper",
+            "title": "Latest Agentic RAG survey",
+            "chunk_id": "fresh-paper:p2:c0",
+            "text": "A 2026 survey discusses the latest Agentic RAG systems.",
+        },
+    }
+    local_tool = SequenceLocalRetrieveTool(
         [
-            {
-                "title": "Latest Agentic RAG survey",
-                "url": "https://example.com/latest-agentic-rag",
-                "content": "A 2026 survey discusses the latest Agentic RAG systems.",
-            }
+            [RETRIEVED_CHUNK, {**RETRIEVED_CHUNK, "id": "paper-1:p4:c0"}],
+            [fresh_chunk],
         ]
     )
-    llm = FakeLLMService("Latest systems add reflection loops [web:1].")
-    workflow = AgenticChatWorkflow(rag, llm, web)
+    registry = ToolRegistry(
+        [
+            local_tool,
+            StaticTool(
+                "arxiv_search",
+                ToolResult(
+                    tool_name="arxiv_search",
+                    success=True,
+                    artifacts=[
+                        {
+                            "title": "Latest Agentic RAG survey",
+                            "pdf_url": "https://arxiv.org/pdf/2601.12345",
+                        }
+                    ],
+                    metadata={
+                        "paper_count": 1,
+                        "pdf_urls": ["https://arxiv.org/pdf/2601.12345"],
+                    },
+                ),
+            ),
+            StaticTool(
+                "pdf_download",
+                ToolResult(
+                    tool_name="pdf_download",
+                    success=True,
+                    artifacts=[
+                        {
+                            "path": "data/pdfs/2601.12345.pdf",
+                            "filename": "2601.12345.pdf",
+                        }
+                    ],
+                    metadata={"path": "data/pdfs/2601.12345.pdf"},
+                ),
+            ),
+            StaticTool(
+                "pdf_index",
+                ToolResult(
+                    tool_name="pdf_index",
+                    success=True,
+                    metadata={"chunks_indexed": 5},
+                ),
+            ),
+        ]
+    )
+    rag = FakeRAGService([])
+    web = FakeWebSearchService()
+    llm = FakeLLMService("Latest systems add reflection loops [fresh-paper:p2:c0].")
+    workflow = AgenticChatWorkflow(rag, llm, web, tool_registry=registry)
 
     result = await workflow.run(ChatWorkflowRequest("What is the latest Agentic RAG approach?"))
 
-    assert web.calls == [{"query": "What is the latest Agentic RAG approach?", "max_results": 5}]
-    assert result.trace[1]["reason"] == "latest_query_requires_web"
-    assert result.trace[1]["sufficient"] is False
-    assert result.citations[0].chunk_id == "web:1"
+    assert web.calls == []
+    assert [event.get("tool_name") for event in result.trace if event["stage"] == "execute_tool"] == [
+        "arxiv_search",
+        "pdf_download",
+        "pdf_index",
+        "local_retrieve",
+    ]
+    assert result.trace[0]["intent"] == "fresh_research"
+    assert result.trace[2]["reason"] == "latest_query_requires_web"
+    assert result.trace[2]["sufficient"] is False
+    assert result.citations[0].chunk_id == "fresh-paper:p2:c0"
+    assert result.citations[0].url == "https://arxiv.org/abs/2601.12345"
+    assert result.citations[0].source_type == "arxiv"
+    assert result.citations[0].source_url == "https://arxiv.org/abs/2601.12345"
+    assert result.citations[0].pdf_url == "https://arxiv.org/pdf/2601.12345"
+    assert result.citations[0].trust_level == "high"
+    assert result.citations[0].ingestion_status == "downloaded"
 
 
 @pytest.mark.asyncio
@@ -213,8 +340,8 @@ async def test_chat_workflow_rejects_low_score_context_before_self_check() -> No
     result = await workflow.run(ChatWorkflowRequest("How does planning retrieve evidence?"))
 
     assert result.answer == UNKNOWN_ANSWER
-    assert result.trace[1]["reason"] == "low_top_score"
-    assert result.trace[1]["self_check_used"] is False
+    assert result.trace[2]["reason"] == "low_top_score"
+    assert result.trace[2]["self_check_used"] is False
     assert web.calls == [{"query": "How does planning retrieve evidence?", "max_results": 5}]
     assert llm.prompts == []
 
@@ -234,9 +361,9 @@ async def test_chat_workflow_uses_llm_self_check_for_borderline_context() -> Non
     result = await workflow.run(ChatWorkflowRequest("How does planning retrieve evidence?"))
 
     assert result.answer == "It uses planning [paper-1:p3:c0]."
-    assert result.trace[1]["reason"] == "llm_self_check_passed"
-    assert result.trace[1]["self_check_used"] is True
-    assert result.trace[1]["self_check_passed"] is True
+    assert result.trace[2]["reason"] == "llm_self_check_passed"
+    assert result.trace[2]["self_check_used"] is True
+    assert result.trace[2]["self_check_passed"] is True
     assert web.calls == []
     assert "Return only YES or NO" in llm.prompts[0]
 
@@ -264,9 +391,10 @@ async def test_chat_workflow_searches_web_when_llm_self_check_rejects_context() 
     result = await workflow.run(ChatWorkflowRequest("How does planning retrieve evidence?"))
 
     assert result.answer == "Planning uses explicit evidence selection [web:1]."
-    assert result.trace[1]["reason"] == "llm_self_check_failed"
-    assert result.trace[1]["self_check_passed"] is False
-    assert result.trace[2]["trigger"] == "llm_self_check_failed"
+    assert result.trace[2]["reason"] == "llm_self_check_failed"
+    assert result.trace[2]["self_check_passed"] is False
+    assert result.trace[3]["reason"] == "llm_self_check_failed"
+    assert result.trace[4]["tool_name"] == "web_search"
     assert web.calls == [{"query": "How does planning retrieve evidence?", "max_results": 5}]
 
 
@@ -281,7 +409,7 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
 
     assert result.answer == "It uses planning for retrieval decisions (p. 3). [paper-1:p3:c0]"
     assert web.calls == []
-    assert result.trace[1]["sufficient"] is True
+    assert result.trace[2]["sufficient"] is True
     citations = result.citations
     assert citations[0].paper_id == "paper-1"
     assert citations[0].page_number == 3
@@ -331,12 +459,39 @@ async def test_chat_service_streams_answer_tokens_with_citations() -> None:
     workflow = AgenticChatWorkflow(rag, llm, FakeWebSearchService())
 
     service = ChatService(workflow)
-    token_stream, citations = await service.stream_answer("How does planning retrieve evidence?")
+    token_stream, citations, trace = await service.stream_answer("How does planning retrieve evidence?")
     tokens = [token async for token in token_stream]
 
-    assert tokens == ["It ", "uses ", "planning "]
+    assert tokens == ["It ", "uses ", "planning ", "[paper-1:p3:c0]"]
     assert citations[0].paper_id == "paper-1"
+    assert trace[0]["stage"] == "classify_intent"
+    assert trace[1]["stage"] == "local_retrieve"
+    assert trace[-1]["stage"] == "verify_answer"
+    assert trace[-1]["suggested_action"] == "revise_answer"
+    assert trace[-1]["unsupported_claim_count"] == 0
     assert "Retrieved context" in llm.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_stream_events_emits_agent_steps_before_tokens() -> None:
+    rag = FakeRAGService(SUFFICIENT_LOCAL_CHUNKS)
+    llm = FakeLLMService("It uses planning [paper-1:p3:c0].")
+    workflow = AgenticChatWorkflow(rag, llm, FakeWebSearchService())
+    service = ChatService(workflow)
+
+    events = []
+    async for event in service.stream_events("How does planning retrieve evidence?"):
+        events.append(event)
+
+    event_types = [event["type"] for event in events]
+    first_token_index = event_types.index("token")
+    first_citation_index = event_types.index("citations")
+
+    assert event_types[:first_token_index] == ["agent_step"] * first_token_index
+    assert events[0]["step"]["stage"] == "classify_intent"
+    assert any(event["type"] == "agent_step" and event["step"]["stage"] == "verify_answer" for event in events)
+    assert first_token_index < first_citation_index
+    assert events[-1]["type"] == "result"
 
 
 @pytest.mark.asyncio
@@ -349,3 +504,73 @@ async def test_chat_service_removes_invalid_citations_from_answer() -> None:
 
     assert result.answer == "It uses planning. [paper-1:p3:c0]"
     assert [citation.chunk_id for citation in result.citations] == ["paper-1:p3:c0"]
+    assert result.trace[-1]["suggested_action"] == "revise_answer"
+
+
+@pytest.mark.asyncio
+async def test_chat_workflow_retrieves_more_when_verifier_requests_more_evidence() -> None:
+    rag = FakeRAGService(UNUSABLE_CITATION_CHUNKS)
+    web = FakeWebSearchService(
+        [
+            {
+                "title": "Recovered evidence",
+                "url": "https://example.com/recovered",
+                "content": "Recovered web evidence explains Agentic RAG verification.",
+            }
+        ]
+    )
+    llm = FakeLLMService(
+        [
+            "Unsupported claim [fake:c0].",
+            "Recovered web evidence explains verification [web:1].",
+        ]
+    )
+    workflow = AgenticChatWorkflow(rag, llm, web)
+
+    result = await workflow.run(ChatWorkflowRequest("How does Agentic RAG verify evidence?"))
+
+    assert result.answer == "Recovered web evidence explains verification [web:1]."
+    assert [citation.chunk_id for citation in result.citations] == ["web:1"]
+    assert web.calls == [{"query": "How does Agentic RAG verify evidence?", "max_results": 5}]
+    assert [event["stage"] for event in result.trace[-5:]] == [
+        "execute_tool",
+        "observe",
+        "draft_answer",
+        "generate_answer",
+        "verify_answer",
+    ]
+    assert result.trace[-7]["stage"] == "verify_answer"
+    assert result.trace[-7]["suggested_action"] == "retrieve_more"
+    assert result.trace[-6]["stage"] == "plan"
+    assert result.trace[-6]["status"] == "recovery"
+    assert result.trace[-5]["tool_name"] == "web_search"
+    assert result.trace[-1]["suggested_action"] == "finalize"
+
+
+@pytest.mark.asyncio
+async def test_chat_workflow_does_not_retrieve_more_when_web_search_is_disabled() -> None:
+    rag = FakeRAGService(UNUSABLE_CITATION_CHUNKS)
+    web = FakeWebSearchService(
+        [
+            {
+                "title": "Recovered evidence",
+                "url": "https://example.com/recovered",
+                "content": "Recovered web evidence explains Agentic RAG verification.",
+            }
+        ]
+    )
+    llm = FakeLLMService("Unsupported claim [fake:c0].")
+    workflow = AgenticChatWorkflow(rag, llm, web)
+
+    result = await workflow.run(
+        ChatWorkflowRequest(
+            "How does Agentic RAG verify evidence?",
+            enable_web_search=False,
+        )
+    )
+
+    assert result.answer == UNKNOWN_ANSWER
+    assert result.citations == []
+    assert web.calls == []
+    assert result.trace[-1]["stage"] == "verify_answer"
+    assert result.trace[-1]["suggested_action"] == "retrieve_more"

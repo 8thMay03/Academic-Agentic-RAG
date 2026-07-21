@@ -8,6 +8,11 @@ class Citation(BaseModel):
     page: int | None = None
     chunk_id: str | None = None
     url: str | None = None
+    source_type: str | None = None
+    source_url: str | None = None
+    pdf_url: str | None = None
+    trust_level: str | None = None
+    ingestion_status: str | None = None
     text: str | None = None
     score: float | None = None
     rerank_score: float | None = None

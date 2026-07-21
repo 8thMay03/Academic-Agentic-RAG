@@ -20,6 +20,10 @@ async def test_chat_history_store_persists_history_per_paper(tmp_path) -> None:
                 text="Planning text.",
             )
         ],
+        trace=[
+            {"stage": "local_retrieve", "chunk_count": 2},
+            {"stage": "verify_answer", "status": "passed", "debug_prompt": "internal"},
+        ],
     )
     await store.append_exchange(
         paper_id="paper-2",
@@ -34,6 +38,10 @@ async def test_chat_history_store_persists_history_per_paper(tmp_path) -> None:
     assert [message.role for message in paper_1_messages] == ["user", "assistant"]
     assert paper_1_messages[0].content == "What is the method?"
     assert paper_1_messages[1].citations[0].page_number == 3
+    assert [event.model_dump(exclude_none=True) for event in paper_1_messages[1].trace] == [
+        {"stage": "local_retrieve", "chunk_count": 2},
+        {"stage": "verify_answer", "status": "passed"},
+    ]
     assert paper_2_messages[0].content == "What is the limitation?"
 
 

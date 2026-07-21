@@ -1,0 +1,53 @@
+{
+  "run_id": "ab8d8bb85a7341d29d178f1f4e9205ca",
+  "chat_id": "1d04e1f560974bfa80ffdda65297633f",
+  "question": "mô hình GRU là gì",
+  "answer": "I don't know",
+  "citations": [],
+  "trace": [
+    {
+      "stage": "classify_intent",
+      "intent": "follow_up_research",
+      "reason": "question_has_recent_chat_history"
+    },
+    {
+      "stage": "local_retrieve",
+      "chunk_count": 5,
+      "success": true
+    },
+    {
+      "stage": "quality_gate",
+      "chunk_count": 5,
+      "sufficient": true,
+      "reason": "strong_context",
+      "context_chars": 2980,
+      "top_score": 0.9966386966623688,
+      "average_score": 0.9214669474413224,
+      "source_count": 5,
+      "query_coverage": 0.8333333333333334,
+      "self_check_used": false
+    },
+    {
+      "stage": "draft_answer",
+      "status": "ready",
+      "context_count": 5,
+      "citation_count": 5
+    },
+    {
+      "stage": "generate_answer",
+      "status": "completed",
+      "success": true,
+      "answer_chars": 12
+    },
+    {
+      "stage": "verify_answer",
+      "status": "passed",
+      "success": true,
+      "issue_count": 0,
+      "unsupported_claim_count": 0,
+      "suggested_action": "finalize"
+    }
+  ],
+  "findings": [],
+  "created_at": "2026-07-21T10:37:48.011998+00:00"
+}

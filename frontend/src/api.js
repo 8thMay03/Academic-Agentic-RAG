@@ -53,8 +53,13 @@ export async function streamChatWithPaper({
   paperIds,
   topK,
   scoreThreshold,
+  maxAgentSteps,
+  enableWebSearch,
+  enableResearchIngest,
+  autoDownloadPdfs,
   onToken,
   onCitations,
+  onAgentStep,
 }) {
   const response = await fetch(`${API_BASE_URL}/chat/stream`, {
     method: "POST",
@@ -65,6 +70,10 @@ export async function streamChatWithPaper({
       paper_ids: paperIds,
       top_k: topK,
       score_threshold: scoreThreshold,
+      max_agent_steps: maxAgentSteps,
+      enable_web_search: enableWebSearch,
+      enable_research_ingest: enableResearchIngest,
+      auto_download_pdfs: autoDownloadPdfs,
     }),
   });
 
@@ -82,6 +91,7 @@ export async function streamChatWithPaper({
   let buffer = "";
   let answer = "";
   let citations = [];
+  let trace = [];
 
   while (true) {
     const { value, done } = await reader.read();
@@ -100,6 +110,10 @@ export async function streamChatWithPaper({
       } else if (event.type === "citations") {
         citations = event.citations ?? [];
         onCitations?.(citations);
+      } else if (event.type === "agent_step") {
+        const step = Object.fromEntries(Object.entries(event).filter(([key]) => key !== "type"));
+        trace = [...trace, step];
+        onAgentStep?.(step);
       } else if (event.type === "error") {
         throw new Error(event.message ?? "Streaming chat failed.");
       }
@@ -114,12 +128,16 @@ export async function streamChatWithPaper({
     } else if (event.type === "citations") {
       citations = event.citations ?? [];
       onCitations?.(citations);
+    } else if (event.type === "agent_step") {
+      const step = Object.fromEntries(Object.entries(event).filter(([key]) => key !== "type"));
+      trace = [...trace, step];
+      onAgentStep?.(step);
     } else if (event.type === "error") {
       throw new Error(event.message ?? "Streaming chat failed.");
     }
   }
 
-  return { answer, citations };
+  return { answer, citations, trace };
 }
 
 export async function listChatThreads() {
@@ -135,6 +153,14 @@ export async function createChatSession(title) {
 
 export async function getChatSession(chatId) {
   return request(`/chat/sessions/${encodeURIComponent(chatId)}`);
+}
+
+export async function listAgentRuns(chatId) {
+  return request(`/chat/sessions/${encodeURIComponent(chatId)}/runs`);
+}
+
+export async function listResearchFindings(chatId) {
+  return request(`/chat/sessions/${encodeURIComponent(chatId)}/findings`);
 }
 
 export async function deleteChatSession(chatId) {
