@@ -12,6 +12,7 @@ import {
   listResearchFindings,
   removeChatSource,
   streamChatWithPaper,
+  updateChatSessionTitle,
 } from "../api.js";
 import AgentRunPanel from "../components/AgentRunPanel.jsx";
 import ChatComposer from "../components/ChatComposer.jsx";
@@ -23,6 +24,16 @@ import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import PdfPreviewModal from "../components/PdfPreviewModal.jsx";
 import SourcePanel from "../components/SourcePanel.jsx";
 import { sourceFromPdf } from "../utils/paper.js";
+
+const DEFAULT_CHAT_TITLES = new Set(["Cuộc trò chuyện mới", "New chat"]);
+
+function chatTitleFromQuestion(value) {
+  return value.trim().replace(/\s+/g, " ").slice(0, 160);
+}
+
+function shouldTitleFromFirstQuestion(chat) {
+  return Boolean(chat) && DEFAULT_CHAT_TITLES.has(chat.title) && (chat.messages?.length ?? 0) === 0;
+}
 
 export default function ChatPage({ onBackHome, initialPaper }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -134,6 +145,39 @@ export default function ChatPage({ onBackHome, initialPaper }) {
     }
   }
 
+  function setChatTitleLocally(chatId, title) {
+    setActiveChat((chat) => (chat?.chat_id === chatId ? { ...chat, title } : chat));
+    setThreads((chatThreads) =>
+      chatThreads.map((thread) => (thread.chat_id === chatId ? { ...thread, title } : thread)),
+    );
+  }
+
+  async function renameChat(chatId, title) {
+    const nextTitle = chatTitleFromQuestion(title);
+    if (!nextTitle) {
+      throw new Error("Tên cuộc trò chuyện không được để trống.");
+    }
+
+    const previousTitle =
+      threads.find((thread) => thread.chat_id === chatId)?.title ??
+      (activeChat?.chat_id === chatId ? activeChat.title : "");
+
+    setChatTitleLocally(chatId, nextTitle);
+    try {
+      const session = await updateChatSessionTitle(chatId, nextTitle);
+      setActiveChat((chat) => (chat?.chat_id === chatId ? { ...chat, ...session, messages: chat.messages } : chat));
+      setThreads((chatThreads) =>
+        chatThreads.map((thread) => (thread.chat_id === chatId ? { ...thread, ...session } : thread)),
+      );
+      setThreadsState({ loading: false, error: "" });
+      return session;
+    } catch (error) {
+      if (previousTitle) setChatTitleLocally(chatId, previousTitle);
+      setThreadsState({ loading: false, error: error.message });
+      throw error;
+    }
+  }
+
   async function ensureActiveChat() {
     if (activeChat) return activeChat;
     const session = await createChatSession("Cuộc trò chuyện mới");
@@ -238,6 +282,8 @@ export default function ChatPage({ onBackHome, initialPaper }) {
       streaming: true,
     };
     const chatId = activeChat.chat_id;
+    const shouldRenameChat = shouldTitleFromFirstQuestion(activeChat);
+    const firstQuestionTitle = shouldRenameChat ? chatTitleFromQuestion(trimmedQuestion) : "";
 
     setActiveChat((chat) =>
       chat?.chat_id === chatId
@@ -248,6 +294,14 @@ export default function ChatPage({ onBackHome, initialPaper }) {
     setChatState({ loading: true, error: "" });
 
     try {
+      if (firstQuestionTitle) {
+        try {
+          await renameChat(chatId, firstQuestionTitle);
+        } catch {
+          // The answer flow should still continue if only the title update fails.
+        }
+      }
+
       await streamChatWithPaper({
         question: trimmedQuestion,
         chatId,
@@ -351,6 +405,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
         onCreateChat={createNewChat}
         onDeleteThread={setDeleteCandidate}
         onOpenThread={openChat}
+        onRenameThread={renameChat}
         threads={threads}
         threadsState={threadsState}
       />
