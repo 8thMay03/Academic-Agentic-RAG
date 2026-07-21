@@ -1,0 +1,159 @@
+{
+  "run_id": "db9234fc46604f1db696bb9358f9b9f2",
+  "chat_id": "c1c96420e4124340b0d4b43a335ca116",
+  "question": "rag là gì",
+  "answer": "RAG (Retrieval-Augmented Generation) là phương pháp kết hợp khả năng truy xuất thông tin từ các nguồn dữ liệu bên ngoài với sức mạnh tạo nội dung của mô hình ngôn ngữ lớn (LLM). Thay vì chỉ dựa vào dữ liệu đã được đào tạo, RAG cho phép mô hình tham khảo các cơ sở kiến thức bên ngoài để tạo ra phản hồi chính xác và đáng tin cậy hơn. RAG giúp các tổ chức tùy chỉnh LLM trên dữ liệu riêng mà không cần đào tạo lại, từ đó nâng cao hiệu quả và tiết kiệm chi phí trong ứng dụng AI tạo sinh[web-ingest:https://fpt-is.com/goc-nhin-so/rag-la-gi, web-ingest:https://aws.amazon.com/vi/what-is/retrieval-augmented-generation, web-ingest:https://200lab.io/blog/rag-la-gi, web-ingest:https://www.intel.vn/content/www/vn/vi/learn/what-is-rag.html].",
+  "citations": [
+    {
+      "paper_id": "https://fpt-is.com/goc-nhin-so/rag-la-gi",
+      "title": "RAG là gì? Ứng dụng của Tạo tăng cường truy xuất (RAG) trong doanh nghiệp",
+      "chunk_id": "web-ingest:https://fpt-is.com/goc-nhin-so/rag-la-gi",
+      "url": "https://fpt-is.com/goc-nhin-so/rag-la-gi",
+      "text": "Ứng dụng của Tạo tăng cường truy xuất (RAG) trong doanh nghiệp. Bằng cách cung cấp thông tin cập nhật và bối cảnh cụ thể, RAG giúp mô hình ngôn ngữ lớn (LLM) tạo ra văn bản chính xác và đáng tin cậy hơn, hỗ trợ doanh nghiệp đưa ra quyết định sáng suốt và nâng cao hiệu quả hoạt động. Bài viết của **anh Lê Bá Hoài – Kỹ sư AI, Trung tâm nghiên cứu và phát triển trí tuệ nhân tạo FPT IS (FPT IS AI R&D Center)** sẽ cung cấp cái nhìn bao quát về RAG: RAG là gì, cách thức hoạt động, lợi ích, ứng dụng thực tế, thách thức và xu hướng phát triển của RAG trong doanh nghiệp. Các giải pháp tìm kiếm đóng vai trò quan trọng trong việc giúp tổ chức truy xuất thông tin hiệu quả từ nhiều nguồn khác nhau, từ cơ sở dữ liệu, tài liệu đến kho kiến thức nội bộ.",
+      "score": 1.0,
+      "rerank_score": 0.9994103661991828,
+      "cross_encoder_score": 7.435419082641602,
+      "keyword_score": 1.0,
+      "reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "retrieval_sources": [
+        "keyword"
+      ],
+      "evidence_quality": "high",
+      "matched_terms": [
+        "rag",
+        "l",
+        "g"
+      ]
+    },
+    {
+      "paper_id": "https://aws.amazon.com/vi/what-is/retrieval-augmented-generation",
+      "title": "RAG là gì? - Giải thích về AI tạo có kết hợp truy xuất thông tin ngoài - AWS",
+      "chunk_id": "web-ingest:https://aws.amazon.com/vi/what-is/retrieval-augmented-generation",
+      "url": "https://aws.amazon.com/vi/what-is/retrieval-augmented-generation",
+      "text": "# RAG (Tạo tăng cường truy xuất) là gì? ## Tạo tăng cường truy xuất là gì? Tạo tăng cường truy xuất (RAG) là quá trình tối ưu hóa đầu ra của một mô hình ngôn ngữ lớn, vì vậy nó tham khảo một cơ sở kiến thức có thẩm quyền bên ngoài các nguồn dữ liệu đào tạo của nó trước khi tạo phản hồi. Mô hình ngôn ngữ lớn (LLM) được đào tạo trên khối lượng dữ liệu khổng lồ và có sử dụng hàng tỷ tham số để tạo ra đầu ra ban đầu cho các nhiệm vụ như trả lời câu hỏi, dịch ngôn ngữ và hoàn thành câu. Các tổ chức có quyền kiểm soát tốt hơn đối với đầu ra văn bản đã tạo và người dùng nắm được thông tin chi tiết về cách LLM tạo phản hồi.",
+      "score": 0.5592316472125374,
+      "rerank_score": 0.9971451686587055,
+      "cross_encoder_score": 5.855883598327637,
+      "vector_score": 0.5403884343354209,
+      "keyword_score": 0.5942261854128964,
+      "reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "retrieval_sources": [
+        "keyword",
+        "vector"
+      ],
+      "evidence_quality": "high",
+      "matched_terms": [
+        "rag",
+        "l",
+        "g"
+      ]
+    },
+    {
+      "paper_id": "https://200lab.io/blog/rag-la-gi",
+      "title": "RAG (Retrieval-Augmented Generation) là gì? Giải thích dễ hiểu cho Developer | 200Lab Blog",
+      "chunk_id": "web-ingest:https://200lab.io/blog/rag-la-gi",
+      "url": "https://200lab.io/blog/rag-la-gi",
+      "text": "RAG là phương pháp kết hợp giữa khả năng truy xuất thông tin từ các nguồn dữ liệu bên ngoài với sức mạnh tạo nội dung của mô hình ngôn ngữ lớn. RAG (Retrieval-Augmented Generation) đang trở thành một bước tiến quan trọng trong việc phát triển các ứng dụng AI thông minh và đáng tin cậy. Thay vì dựa hoàn toàn vào trí nhớ của các mô hình ngôn ngữ lớn (LLM), RAG kết hợp khả năng truy xuất thông tin từ các nguồn dữ liệu bên ngoài với sức mạnh suy luận của LLM. **RAG (Retrieval-Augmented Generation)** là một phương pháp kết hợp giữa khả năng truy xuất thông tin từ các nguồn dữ liệu bên ngoài (Retrieval) với sức mạnh tạo nội dung của mô hình ngôn ngữ lớn (LLM - Large Language Model).",
+      "score": 0.6111172030221604,
+      "rerank_score": 0.9969112096651802,
+      "cross_encoder_score": 5.776882171630859,
+      "vector_score": 0.5608330749329128,
+      "keyword_score": 0.704502012330763,
+      "reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "retrieval_sources": [
+        "keyword",
+        "vector"
+      ],
+      "evidence_quality": "high",
+      "matched_terms": [
+        "rag",
+        "l"
+      ]
+    },
+    {
+      "paper_id": "https://www.intel.vn/content/www/vn/vi/learn/what-is-rag.html",
+      "title": "RAG là gì?: Giải thích về Tạo tăng cường truy xuất – Intel",
+      "chunk_id": "web-ingest:https://www.intel.vn/content/www/vn/vi/learn/what-is-rag.html",
+      "url": "https://www.intel.vn/content/www/vn/vi/learn/what-is-rag.html",
+      "text": "RAG cho phép các tổ chức tùy chỉnh LLM trên dữ liệu của riêng họ mà không cần đào tạo lại hoặc tinh chỉnh, cho phép các tổ chức triển khai các ứng dụng LLM tùy chỉnh một cách nhanh chóng và tiết kiệm chi phí. * RAG là khung AI giúp các LLM đưa ra phản hồi chính xác và phù hợp hơn bằng cách cho phép các mô hình truy cập dữ liệu không có trong khóa đào tạo của họ. * Trong môi trường doanh nghiệp, RAG cho phép các tổ chức tùy chỉnh LLM trên dữ liệu độc quyền của họ mà không cần đào tạo lại hoặc tinh chỉnh. * Không cần tinh chỉnh, RAG cho phép các tổ chức tùy chỉnh và khởi động các ứng dụng AI tạo sinh một cách nhanh chóng và tiết kiệm chi phí hơn.",
+      "score": 0.6244586571722663,
+      "rerank_score": 0.9877370558059915,
+      "cross_encoder_score": 4.388834476470947,
+      "vector_score": 0.5039796062863595,
+      "keyword_score": 0.8482054659603788,
+      "reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "retrieval_sources": [
+        "keyword",
+        "vector"
+      ],
+      "evidence_quality": "high",
+      "matched_terms": [
+        "rag",
+        "l"
+      ]
+    }
+  ],
+  "trace": [
+    {
+      "stage": "local_retrieve",
+      "chunk_count": 5,
+      "success": true
+    },
+    {
+      "stage": "quality_gate",
+      "chunk_count": 5,
+      "sufficient": true,
+      "reason": "strong_context",
+      "context_chars": 3487,
+      "top_score": 0.9994103661991828,
+      "average_score": 0.9949095224513546,
+      "source_count": 5,
+      "query_coverage": 1.0,
+      "self_check_used": false
+    },
+    {
+      "stage": "draft_answer",
+      "status": "ready",
+      "context_count": 5,
+      "citation_count": 5
+    },
+    {
+      "stage": "generate_answer",
+      "status": "completed",
+      "success": true,
+      "answer_chars": 735
+    },
+    {
+      "stage": "verify_answer",
+      "status": "revised",
+      "success": false,
+      "issue_count": 1,
+      "unsupported_claim_count": 0,
+      "suggested_action": "revise_answer"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "db9234fc46604f1db696bb9358f9b9f2:f0",
+      "chat_id": "c1c96420e4124340b0d4b43a335ca116",
+      "run_id": "db9234fc46604f1db696bb9358f9b9f2",
+      "question": "rag là gì",
+      "summary": "RAG (Retrieval-Augmented Generation) là phương pháp kết hợp khả năng truy xuất thông tin từ các nguồn dữ liệu bên ngoài với sức mạnh tạo nội dung của mô hình ngôn ngữ lớn (LLM). Thay vì chỉ dựa vào dữ liệu đã được đào tạo, RAG cho phép mô hình tham khảo các cơ sở kiến thức bên ngoài để tạo ra phản hồi chính xác và đáng tin cậy hơn. RAG giúp các tổ chức tùy chỉnh LLM trên dữ liệu riêng mà không cần đào tạo lại, từ đó nâng cao hiệu quả và tiết kiệm chi phí trong ứng dụng AI tạo sinh[web-ingest:https://fpt-is.com/goc-nhin-so/rag-la-gi, web-ingest:https://aws.amazon.com/vi/what-is/retrieval-augmented-generation, web-ingest:https://200lab.io/blog/rag-la-gi, web-ingest:https://www.intel.vn/content/www/vn/vi/learn/what-is-rag.html].",
+      "source_ids": [
+        "https://fpt-is.com/goc-nhin-so/rag-la-gi",
+        "https://aws.amazon.com/vi/what-is/retrieval-augmented-generation",
+        "https://200lab.io/blog/rag-la-gi",
+        "https://www.intel.vn/content/www/vn/vi/learn/what-is-rag.html"
+      ],
+      "citation_ids": [
+        "web-ingest:https://fpt-is.com/goc-nhin-so/rag-la-gi",
+        "web-ingest:https://aws.amazon.com/vi/what-is/retrieval-augmented-generation",
+        "web-ingest:https://200lab.io/blog/rag-la-gi",
+        "web-ingest:https://www.intel.vn/content/www/vn/vi/learn/what-is-rag.html"
+      ],
+      "confidence": "low",
+      "created_at": "2026-07-21T09:31:58.083376+00:00"
+    }
+  ],
+  "created_at": "2026-07-21T09:31:58.083376+00:00"
+}

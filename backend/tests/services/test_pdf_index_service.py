@@ -58,6 +58,42 @@ async def test_pdf_index_service_skips_unchanged_pdf_from_manifest(monkeypatch, 
     assert second_result.chunks_indexed == first_result.chunks_indexed
 
 
+async def test_pdf_index_service_persists_source_metadata(monkeypatch, tmp_path) -> None:
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.mkdir()
+    pdf_path = pdf_dir / "paper-1.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    indexed_chunks = []
+    source_metadata = {
+        "source_type": "arxiv",
+        "source_url": "https://arxiv.org/abs/2601.12345",
+        "pdf_url": "https://arxiv.org/pdf/2601.12345",
+        "discovered_by_query": "agentic rag",
+        "trust_level": "high",
+    }
+
+    monkeypatch.setattr(
+        "app.services.pdf_index_service.extract_text_from_pdf",
+        lambda path: "Page one text",
+    )
+
+    async def fake_index_chunks(chunks):
+        indexed_chunks.extend(chunks)
+
+    monkeypatch.setattr("app.services.pdf_index_service.index_chunks", fake_index_chunks)
+
+    service = PDFIndexService(data_dir=tmp_path)
+    first_result = await service.index_downloaded_pdf("paper-1.pdf", source_metadata=source_metadata)
+    second_result = await service.index_downloaded_pdf("paper-1.pdf")
+
+    assert first_result.source_metadata == source_metadata
+    assert second_result.cached is True
+    assert second_result.source_metadata == source_metadata
+    assert indexed_chunks[0].metadata["source_type"] == "arxiv"
+    assert indexed_chunks[0].metadata["source_url"] == "https://arxiv.org/abs/2601.12345"
+    assert indexed_chunks[0].metadata["pdf_url"] == "https://arxiv.org/pdf/2601.12345"
+
+
 async def test_pdf_index_service_indexes_all_downloaded_pdfs(monkeypatch, tmp_path) -> None:
     pdf_dir = tmp_path / "pdfs"
     pdf_dir.mkdir()

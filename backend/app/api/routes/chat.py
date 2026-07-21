@@ -4,8 +4,9 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.api.dependencies import get_chat_history_store, get_chat_service
+from app.api.dependencies import get_agent_run_store, get_chat_history_store, get_chat_service
 from app.models.chat import (
+    AgentRunListResponse,
     ChatHistoryResponse,
     ChatRequest,
     ChatResponse,
@@ -14,8 +15,11 @@ from app.models.chat import (
     ChatSessionUpdateRequest,
     ChatSourceAddRequest,
     ChatThreadListResponse,
+    ResearchFindingListResponse,
+    agent_trace_payload,
 )
 from app.services.chat_service import ChatService
+from app.storage.agent_run_store import AgentRunStore
 from app.storage.chat_history_store import ChatHistoryStore
 
 router = APIRouter()
@@ -26,6 +30,7 @@ async def chat_with_papers(
     request: ChatRequest,
     chat_service: ChatService = Depends(get_chat_service),
     history_store: ChatHistoryStore = Depends(get_chat_history_store),
+    agent_run_store: AgentRunStore = Depends(get_agent_run_store),
 ) -> ChatResponse:
     paper_ids = request.paper_ids
     history_key = request.chat_id or (request.paper_ids[0] if request.paper_ids else None)
@@ -38,21 +43,33 @@ async def chat_with_papers(
     elif history_key:
         chat_history = await history_store.get_messages(history_key)
 
-    answer, citations = await chat_service.answer(
+    result = await chat_service.answer(
         question=request.question,
         paper_ids=paper_ids,
         top_k=request.top_k,
         score_threshold=request.score_threshold,
         chat_history=chat_history,
+        max_agent_steps=request.max_agent_steps,
+        enable_web_search=request.enable_web_search,
+        enable_research_ingest=request.enable_research_ingest,
+        auto_download_pdfs=request.auto_download_pdfs,
     )
+    trace = agent_trace_payload(result.trace)
     if history_key:
         await history_store.append_exchange(
             paper_id=history_key,
             question=request.question,
-            answer=answer,
-            citations=citations,
+            answer=result.answer,
+            citations=result.citations,
         )
-    return ChatResponse(answer=answer, citations=citations)
+        await agent_run_store.append_run(
+            chat_id=history_key,
+            question=request.question,
+            answer=result.answer,
+            citations=result.citations,
+            trace=trace,
+        )
+    return ChatResponse(answer=result.answer, citations=result.citations, trace=trace)
 
 
 @router.post("/stream")
@@ -60,6 +77,7 @@ async def stream_chat_with_papers(
     request: ChatRequest,
     chat_service: ChatService = Depends(get_chat_service),
     history_store: ChatHistoryStore = Depends(get_chat_history_store),
+    agent_run_store: AgentRunStore = Depends(get_agent_run_store),
 ) -> StreamingResponse:
     paper_ids = request.paper_ids
     history_key = request.chat_id or (request.paper_ids[0] if request.paper_ids else None)
@@ -75,13 +93,20 @@ async def stream_chat_with_papers(
     async def event_stream() -> AsyncIterator[str]:
         answer_parts: list[str] = []
         try:
-            token_stream, citations = await chat_service.stream_answer(
+            token_stream, citations, trace = await chat_service.stream_answer(
                 question=request.question,
                 paper_ids=paper_ids,
                 top_k=request.top_k,
                 score_threshold=request.score_threshold,
                 chat_history=chat_history,
+                max_agent_steps=request.max_agent_steps,
+                enable_web_search=request.enable_web_search,
+                enable_research_ingest=request.enable_research_ingest,
+                auto_download_pdfs=request.auto_download_pdfs,
             )
+            trace = agent_trace_payload(trace)
+            for event in trace:
+                yield _stream_event("agent_step", **event)
             async for token in token_stream:
                 answer_parts.append(token)
                 yield _stream_event("token", content=token)
@@ -93,6 +118,13 @@ async def stream_chat_with_papers(
                     question=request.question,
                     answer=answer,
                     citations=citations,
+                )
+                await agent_run_store.append_run(
+                    chat_id=history_key,
+                    question=request.question,
+                    answer=answer,
+                    citations=citations,
+                    trace=trace,
                 )
             yield _stream_event("citations", citations=[citation.model_dump(mode="json", exclude_none=True) for citation in citations])
             yield _stream_event("done")
@@ -130,6 +162,30 @@ async def get_chat_session(
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {chat_id}")
     return session
+
+
+@router.get("/sessions/{chat_id}/runs", response_model=AgentRunListResponse, response_model_exclude_none=True)
+async def list_agent_runs(
+    chat_id: str,
+    history_store: ChatHistoryStore = Depends(get_chat_history_store),
+    agent_run_store: AgentRunStore = Depends(get_agent_run_store),
+) -> AgentRunListResponse:
+    session = await history_store.get_session(chat_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {chat_id}")
+    return AgentRunListResponse(runs=await agent_run_store.list_runs(chat_id))
+
+
+@router.get("/sessions/{chat_id}/findings", response_model=ResearchFindingListResponse)
+async def list_research_findings(
+    chat_id: str,
+    history_store: ChatHistoryStore = Depends(get_chat_history_store),
+    agent_run_store: AgentRunStore = Depends(get_agent_run_store),
+) -> ResearchFindingListResponse:
+    session = await history_store.get_session(chat_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Chat not found: {chat_id}")
+    return ResearchFindingListResponse(findings=await agent_run_store.list_findings(chat_id))
 
 
 @router.delete("/sessions/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)

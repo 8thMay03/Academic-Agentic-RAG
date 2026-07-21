@@ -1,12 +1,41 @@
 from typing import Any, TypedDict
 
+from app.agent.models import (
+    AgentLimits,
+    AgentTraceEvent,
+    ChatWorkflowRequest,
+    ContextQuality,
+    ResearchPlan,
+    ToolCall,
+    ToolResult,
+    RetrievedChunk,
+    VerificationResult,
+)
+from app.models.citation import Citation
+
 
 class AgenticRAGState(TypedDict, total=False):
-    workflow: Any
-    request: Any
-    local_chunks: list[dict]
-    web_chunks: list[dict]
-    quality: Any
-    citations: list[Any]
+    request: ChatWorkflowRequest
+    intent: str
+    local_chunks: list[RetrievedChunk]
+    web_chunks: list[RetrievedChunk]
+    evidence: list[RetrievedChunk]
+    quality: ContextQuality
+    citations: list[Citation]
+    answer: str
+    verification: VerificationResult
+    answer_verifier: Any
+    citation_grounder: Any
+    llm_service: Any
+    prompt_builder: Any
+    quality_evaluator: Any
+    tool_registry: Any
     prompt: str | None
-    trace: list[dict]
+    trace: list[AgentTraceEvent]
+    plan: ResearchPlan
+    current_step_index: int
+    tool_calls: list[ToolCall]
+    current_tool_result: ToolResult
+    tool_results: list[ToolResult]
+    limits: AgentLimits
+    refreshed_local_context: bool

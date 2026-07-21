@@ -1,6 +1,6 @@
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from app.config.settings import settings
@@ -16,6 +16,7 @@ class PDFIndexResult:
     filename: str
     chunks_indexed: int
     cached: bool = False
+    source_metadata: dict = field(default_factory=dict)
 
 
 class PDFIndexService:
@@ -24,13 +25,18 @@ class PDFIndexService:
         self._pdf_dir = self._data_dir / "pdfs"
         self._manifest_path = self._data_dir / "metadata" / "pdf_index_manifest.json"
 
-    async def index_downloaded_pdf(self, filename: str, force: bool = False) -> PDFIndexResult:
+    async def index_downloaded_pdf(
+        self,
+        filename: str,
+        force: bool = False,
+        source_metadata: dict | None = None,
+    ) -> PDFIndexResult:
         safe_name = Path(filename).name
         pdf_path = self._pdf_dir / safe_name
         if not safe_name.lower().endswith(".pdf") or not pdf_path.is_file():
             raise FileNotFoundError(f"Downloaded PDF not found: {filename}")
 
-        return await self.index_pdf(pdf_path, force=force)
+        return await self.index_pdf(pdf_path, force=force, source_metadata=source_metadata)
 
     async def index_all_downloaded_pdfs(self, force: bool = False) -> list[PDFIndexResult]:
         if not self._pdf_dir.exists():
@@ -42,8 +48,14 @@ class PDFIndexService:
                 results.append(await self.index_pdf(pdf_path, force=force))
         return results
 
-    async def index_pdf(self, pdf_path: Path, force: bool = False) -> PDFIndexResult:
+    async def index_pdf(
+        self,
+        pdf_path: Path,
+        force: bool = False,
+        source_metadata: dict | None = None,
+    ) -> PDFIndexResult:
         paper_id = pdf_path.stem
+        source_metadata = dict(source_metadata or {})
         manifest = self._read_manifest()
         signature = self._file_signature(pdf_path)
         manifest_entry = manifest.get(pdf_path.name)
@@ -54,6 +66,7 @@ class PDFIndexService:
                 filename=pdf_path.name,
                 chunks_indexed=int(manifest_entry.get("chunks_indexed", 0)),
                 cached=True,
+                source_metadata=manifest_entry.get("source_metadata") or source_metadata,
             )
 
         raw_text = await asyncio.to_thread(extract_text_from_pdf, pdf_path)
@@ -65,6 +78,7 @@ class PDFIndexService:
                 {
                     "title": pdf_path.name,
                     "source_path": pdf_path.as_posix(),
+                    **source_metadata,
                 }
             )
 
@@ -73,6 +87,7 @@ class PDFIndexService:
             **signature,
             "paper_id": paper_id,
             "chunks_indexed": len(chunks),
+            "source_metadata": source_metadata,
         }
         self._write_manifest(manifest)
         return PDFIndexResult(
@@ -80,6 +95,7 @@ class PDFIndexService:
             filename=pdf_path.name,
             chunks_indexed=len(chunks),
             cached=False,
+            source_metadata=source_metadata,
         )
 
     @staticmethod

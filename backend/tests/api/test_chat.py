@@ -1,9 +1,48 @@
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import get_chat_history_store, get_chat_service
+from app.api.dependencies import get_agent_run_store, get_chat_history_store, get_chat_service
+from app.agent.workflow import ChatWorkflowResult
 from app.main import app
-from app.models.chat import ChatHistoryMessage, ChatSession, ChatSource, ChatThread
+from app.models.chat import (
+    AgentRunRecord,
+    AgentTraceEventResponse,
+    ChatHistoryMessage,
+    ChatSession,
+    ChatSource,
+    ChatThread,
+    ResearchFinding,
+)
 from app.models.citation import Citation
+
+
+FAKE_TRACE = [
+    {
+        "stage": "local_retrieve",
+        "chunk_count": 2,
+        "paper_ids": ["paper-1"],
+    },
+    {
+        "stage": "quality_gate",
+        "sufficient": True,
+        "reason": "strong_context",
+    },
+    {
+        "stage": "generate_answer",
+        "status": "completed",
+        "success": True,
+        "answer_chars": 47,
+    },
+    {
+        "stage": "verify_answer",
+        "status": "passed",
+        "success": True,
+    },
+]
+RAW_FAKE_TRACE = [
+    *FAKE_TRACE[:2],
+    {**FAKE_TRACE[2], "debug_prompt": "ignored at API boundary"},
+    *FAKE_TRACE[3:],
+]
 
 
 class FakeChatService:
@@ -14,11 +53,19 @@ class FakeChatService:
         top_k: int = 5,
         score_threshold: float = 0.65,
         chat_history: list[ChatHistoryMessage] | None = None,
-    ) -> tuple[str, list[Citation]]:
+        max_agent_steps: int = 6,
+        enable_web_search: bool = True,
+        enable_research_ingest: bool = True,
+        auto_download_pdfs: bool = True,
+    ) -> ChatWorkflowResult:
         assert question == "What is the method?"
         assert paper_ids == ["paper-1"]
         assert top_k == 3
         assert score_threshold == 0.7
+        assert max_agent_steps == 4
+        assert enable_web_search is False
+        assert enable_research_ingest is True
+        assert auto_download_pdfs is False
         assert chat_history == [
             ChatHistoryMessage(
                 role="user",
@@ -26,9 +73,9 @@ class FakeChatService:
                 created_at="2026-01-01T00:00:00+00:00",
             )
         ]
-        return (
-            "It uses planning for retrieval decisions (p. 3).",
-            [
+        return ChatWorkflowResult(
+            answer="It uses planning for retrieval decisions (p. 3).",
+            citations=[
                 Citation(
                     paper_id="paper-1",
                     title="Agentic RAG",
@@ -47,6 +94,7 @@ class FakeChatService:
                     matched_terms=["planning"],
                 )
             ],
+            trace=RAW_FAKE_TRACE,
         )
 
     async def stream_answer(
@@ -56,11 +104,19 @@ class FakeChatService:
         top_k: int = 5,
         score_threshold: float = 0.65,
         chat_history: list[ChatHistoryMessage] | None = None,
+        max_agent_steps: int = 6,
+        enable_web_search: bool = True,
+        enable_research_ingest: bool = True,
+        auto_download_pdfs: bool = True,
     ):
         assert question == "What is the method?"
         assert paper_ids == ["paper-1"]
         assert top_k == 3
         assert score_threshold == 0.7
+        assert max_agent_steps == 4
+        assert enable_web_search is False
+        assert enable_research_ingest is True
+        assert auto_download_pdfs is False
         assert chat_history == [
             ChatHistoryMessage(
                 role="user",
@@ -94,6 +150,7 @@ class FakeChatService:
                     matched_terms=["planning"],
                 )
             ],
+            RAW_FAKE_TRACE,
         )
 
 
@@ -172,10 +229,41 @@ class FakeChatHistoryStore:
         return self.session
 
 
+class FakeAgentRunStore:
+    def __init__(self) -> None:
+        self.runs = []
+
+    async def append_run(self, chat_id, question, answer, citations, trace):
+        self.runs.append(
+            {
+                "chat_id": chat_id,
+                "question": question,
+                "answer": answer,
+                "citations": citations,
+                "trace": trace,
+            }
+        )
+
+    async def list_runs(self, chat_id):
+        return [
+            run
+            for run in self.runs
+            if (run.chat_id if hasattr(run, "chat_id") else run["chat_id"]) == chat_id
+        ]
+
+    async def list_findings(self, chat_id):
+        findings = []
+        for run in await self.list_runs(chat_id):
+            findings.extend(run.findings if hasattr(run, "findings") else run.get("findings", []))
+        return findings
+
+
 def test_chat_with_papers_returns_answer_and_citations() -> None:
     history_store = FakeChatHistoryStore()
+    agent_run_store = FakeAgentRunStore()
     app.dependency_overrides[get_chat_service] = lambda: FakeChatService()
     app.dependency_overrides[get_chat_history_store] = lambda: history_store
+    app.dependency_overrides[get_agent_run_store] = lambda: agent_run_store
     client = TestClient(app)
 
     response = client.post(
@@ -185,6 +273,10 @@ def test_chat_with_papers_returns_answer_and_citations() -> None:
             "paper_ids": ["paper-1"],
             "top_k": 3,
             "score_threshold": 0.7,
+            "max_agent_steps": 4,
+            "enable_web_search": False,
+            "enable_research_ingest": True,
+            "auto_download_pdfs": False,
         },
     )
 
@@ -192,6 +284,8 @@ def test_chat_with_papers_returns_answer_and_citations() -> None:
 
     assert history_store.appended["paper_id"] == "paper-1"
     assert history_store.appended["question"] == "What is the method?"
+    assert agent_run_store.runs[0]["chat_id"] == "paper-1"
+    assert agent_run_store.runs[0]["trace"] == FAKE_TRACE
     assert response.status_code == 200
     assert response.json() == {
         "answer": "It uses planning for retrieval decisions (p. 3).",
@@ -214,6 +308,7 @@ def test_chat_with_papers_returns_answer_and_citations() -> None:
                 "matched_terms": ["planning"],
             }
         ],
+        "trace": FAKE_TRACE,
     }
 
 
@@ -226,11 +321,23 @@ def test_chat_session_without_sources_searches_all_local_documents() -> None:
             top_k: int = 5,
             score_threshold: float = 0.65,
             chat_history: list[ChatHistoryMessage] | None = None,
-        ) -> tuple[str, list[Citation]]:
+            max_agent_steps: int = 6,
+            enable_web_search: bool = True,
+            enable_research_ingest: bool = True,
+            auto_download_pdfs: bool = True,
+        ) -> ChatWorkflowResult:
             assert question == "What is CRAG?"
             assert paper_ids is None
             assert chat_history == []
-            return "CRAG corrects retrieved context.", []
+            assert max_agent_steps == 6
+            assert enable_web_search is True
+            assert enable_research_ingest is True
+            assert auto_download_pdfs is True
+            return ChatWorkflowResult(
+                answer="CRAG corrects retrieved context.",
+                citations=[],
+                trace=[{"stage": "local_retrieve", "chunk_count": 0}],
+            )
 
     class NoSourceHistoryStore(FakeChatHistoryStore):
         def __init__(self) -> None:
@@ -240,8 +347,10 @@ def test_chat_session_without_sources_searches_all_local_documents() -> None:
             self.messages = []
 
     history_store = NoSourceHistoryStore()
+    agent_run_store = FakeAgentRunStore()
     app.dependency_overrides[get_chat_service] = lambda: NoSourceChatService()
     app.dependency_overrides[get_chat_history_store] = lambda: history_store
+    app.dependency_overrides[get_agent_run_store] = lambda: agent_run_store
     client = TestClient(app)
 
     response = client.post(
@@ -255,8 +364,38 @@ def test_chat_session_without_sources_searches_all_local_documents() -> None:
     app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json() == {"answer": "CRAG corrects retrieved context.", "citations": []}
+    assert response.json() == {
+        "answer": "CRAG corrects retrieved context.",
+        "citations": [],
+        "trace": [{"stage": "local_retrieve", "chunk_count": 0}],
+    }
     assert history_store.appended["paper_id"] == "chat-1"
+    assert agent_run_store.runs[0]["chat_id"] == "chat-1"
+
+
+def test_agent_trace_event_response_filters_unknown_fields() -> None:
+    event = AgentTraceEventResponse(
+        stage="generate_answer",
+        step_count=2,
+        answer_chars=47,
+        source_type="arxiv",
+        source_url="https://arxiv.org/abs/2601.12345",
+        pdf_url="https://arxiv.org/pdf/2601.12345",
+        trust_level="high",
+        ingestion_status="downloaded",
+        unknown="ignored",
+    )
+
+    assert event.model_dump(exclude_none=True) == {
+        "stage": "generate_answer",
+        "step_count": 2,
+        "answer_chars": 47,
+        "source_type": "arxiv",
+        "source_url": "https://arxiv.org/abs/2601.12345",
+        "pdf_url": "https://arxiv.org/pdf/2601.12345",
+        "trust_level": "high",
+        "ingestion_status": "downloaded",
+    }
 
 
 def test_get_chat_history_returns_messages() -> None:
@@ -281,10 +420,145 @@ def test_get_chat_history_returns_messages() -> None:
     }
 
 
+def test_list_agent_runs_returns_persisted_runs() -> None:
+    history_store = FakeChatHistoryStore()
+    agent_run_store = FakeAgentRunStore()
+    agent_run_store.runs.append(
+        AgentRunRecord(
+            run_id="run-1",
+            chat_id="chat-1",
+            question="What is the method?",
+            answer="It uses planning.",
+            citations=[],
+            trace=FAKE_TRACE,
+            findings=[
+                ResearchFinding(
+                    finding_id="run-1:f0",
+                    chat_id="chat-1",
+                    run_id="run-1",
+                    question="What is the method?",
+                    summary="It uses planning.",
+                    source_ids=["paper-1"],
+                    citation_ids=["paper-1:p3:c0"],
+                    confidence="high",
+                    created_at="2026-01-01T00:00:00+00:00",
+                )
+            ],
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+    )
+    app.dependency_overrides[get_chat_history_store] = lambda: history_store
+    app.dependency_overrides[get_agent_run_store] = lambda: agent_run_store
+    client = TestClient(app)
+
+    response = client.get("/api/v1/chat/sessions/chat-1/runs")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "runs": [
+            {
+                "run_id": "run-1",
+                "chat_id": "chat-1",
+                "question": "What is the method?",
+                "answer": "It uses planning.",
+                "citations": [],
+                "trace": FAKE_TRACE,
+                "findings": [
+                    {
+                        "finding_id": "run-1:f0",
+                        "chat_id": "chat-1",
+                        "run_id": "run-1",
+                        "question": "What is the method?",
+                        "summary": "It uses planning.",
+                        "source_ids": ["paper-1"],
+                        "citation_ids": ["paper-1:p3:c0"],
+                        "confidence": "high",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+                "created_at": "2026-01-01T00:00:00+00:00",
+            }
+        ]
+    }
+
+
+def test_list_agent_runs_returns_not_found_for_missing_chat() -> None:
+    class MissingChatHistoryStore(FakeChatHistoryStore):
+        async def get_session(self, chat_id):
+            return None
+
+    app.dependency_overrides[get_chat_history_store] = lambda: MissingChatHistoryStore()
+    app.dependency_overrides[get_agent_run_store] = lambda: FakeAgentRunStore()
+    client = TestClient(app)
+
+    response = client.get("/api/v1/chat/sessions/missing/runs")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+
+
+def test_list_research_findings_returns_run_findings() -> None:
+    history_store = FakeChatHistoryStore()
+    agent_run_store = FakeAgentRunStore()
+    agent_run_store.runs.append(
+        AgentRunRecord(
+            run_id="run-1",
+            chat_id="chat-1",
+            question="What is the method?",
+            answer="It uses planning.",
+            citations=[],
+            trace=FAKE_TRACE,
+            findings=[
+                ResearchFinding(
+                    finding_id="run-1:f0",
+                    chat_id="chat-1",
+                    run_id="run-1",
+                    question="What is the method?",
+                    summary="It uses planning.",
+                    source_ids=["paper-1"],
+                    citation_ids=["paper-1:p3:c0"],
+                    confidence="high",
+                    created_at="2026-01-01T00:00:00+00:00",
+                )
+            ],
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+    )
+    app.dependency_overrides[get_chat_history_store] = lambda: history_store
+    app.dependency_overrides[get_agent_run_store] = lambda: agent_run_store
+    client = TestClient(app)
+
+    response = client.get("/api/v1/chat/sessions/chat-1/findings")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "findings": [
+            {
+                "finding_id": "run-1:f0",
+                "chat_id": "chat-1",
+                "run_id": "run-1",
+                "question": "What is the method?",
+                "summary": "It uses planning.",
+                "source_ids": ["paper-1"],
+                "citation_ids": ["paper-1:p3:c0"],
+                "confidence": "high",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            }
+        ]
+    }
+
+
 def test_stream_chat_with_papers_returns_token_events_and_persists_history() -> None:
     history_store = FakeChatHistoryStore()
+    agent_run_store = FakeAgentRunStore()
     app.dependency_overrides[get_chat_service] = lambda: FakeChatService()
     app.dependency_overrides[get_chat_history_store] = lambda: history_store
+    app.dependency_overrides[get_agent_run_store] = lambda: agent_run_store
     client = TestClient(app)
 
     with client.stream(
@@ -295,6 +569,10 @@ def test_stream_chat_with_papers_returns_token_events_and_persists_history() -> 
             "paper_ids": ["paper-1"],
             "top_k": 3,
             "score_threshold": 0.7,
+            "max_agent_steps": 4,
+            "enable_web_search": False,
+            "enable_research_ingest": True,
+            "auto_download_pdfs": False,
         },
     ) as response:
         body = response.read().decode("utf-8")
@@ -302,10 +580,16 @@ def test_stream_chat_with_papers_returns_token_events_and_persists_history() -> 
     app.dependency_overrides.clear()
 
     assert response.status_code == 200
+    assert '"type": "agent_step", "stage": "local_retrieve"' in body
+    assert '"type": "agent_step", "stage": "verify_answer"' in body
+    assert '"answer_chars": 47' in body
+    assert "debug_prompt" not in body
     assert '"type": "token", "content": "It "' in body
     assert '"type": "citations"' in body
     assert '"type": "done"' in body
     assert history_store.appended["answer"] == "It uses planning."
+    assert agent_run_store.runs[0]["answer"] == "It uses planning."
+    assert agent_run_store.runs[0]["trace"] == FAKE_TRACE
 
 
 def test_list_chat_history_returns_threads() -> None:
