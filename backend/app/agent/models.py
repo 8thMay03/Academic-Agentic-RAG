@@ -237,6 +237,7 @@ class AgentTraceEvent(TypedDict):
     unsupported_claim_count: NotRequired[int]
     suggested_action: NotRequired[str]
     answer_chars: NotRequired[int]
+    tool_result: NotRequired[dict[str, Any]]
 
 
 def trace_event(stage: str, **fields: Any) -> AgentTraceEvent:

@@ -1,4 +1,5 @@
 from app.agent.models import append_trace
+from app.agent.nodes.observer_node import compact_tool_result
 from app.agent.state import AgenticRAGState
 from app.agent.tools.local_retrieve_tool import local_retrieve_input
 
@@ -21,6 +22,7 @@ async def local_retrieve_node(state: AgenticRAGState) -> AgenticRAGState:
         "chunk_count": len(local_chunks),
         "paper_ids": request.paper_ids,
         "success": result.success,
+        "tool_result": compact_tool_result(result),
     }
     if result.error:
         trace_fields["reason"] = result.error

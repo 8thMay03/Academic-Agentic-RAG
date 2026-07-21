@@ -53,5 +53,16 @@ async def test_local_retrieve_node_uses_tool_contract():
             "chunk_count": 1,
             "paper_ids": ["paper-1"],
             "success": True,
+            "tool_result": {
+                "tool_name": "local_retrieve",
+                "success": True,
+                "chunks": [
+                    {
+                        "id": "paper-1:p1:c0",
+                        "text": "Agentic RAG plans before retrieving.",
+                    }
+                ],
+                "chunk_count": 1,
+            },
         }
     ]

@@ -55,6 +55,7 @@ class AgentTraceEventResponse(BaseModel):
     unsupported_claim_count: int | None = None
     suggested_action: str | None = None
     answer_chars: int | None = None
+    tool_result: dict[str, Any] | None = None
 
 
 class ChatResponse(BaseModel):

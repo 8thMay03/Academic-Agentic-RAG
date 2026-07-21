@@ -27,16 +27,26 @@ export default function AgentActivity({ trace }) {
             <span className="agent-step-icon" aria-hidden="true">
               <Icon size={14} />
             </span>
-            <span className="agent-step-copy">
+            <div className="agent-step-copy">
               <span className="agent-step-stage">{display.label}</span>
               {display.detail ? <span className="agent-step-detail">{display.detail}</span> : null}
-            </span>
+              {step.tool_result ? (
+                <details className="agent-tool-result">
+                  <summary>Tool result</summary>
+                  <pre>{formatToolResult(step.tool_result)}</pre>
+                </details>
+              ) : null}
+            </div>
             {display.badge ? <span className="agent-step-badge">{display.badge}</span> : null}
           </div>
         );
       })}
     </div>
   );
+}
+
+function formatToolResult(toolResult) {
+  return JSON.stringify(toolResult, null, 2);
 }
 
 function iconForStep(step) {
