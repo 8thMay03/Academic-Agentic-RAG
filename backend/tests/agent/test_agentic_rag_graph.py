@@ -74,6 +74,9 @@ async def test_agentic_rag_graph_answers_from_sufficient_local_context() -> None
 
     assert [event["stage"] for event in result.trace] == [
         "classify_intent",
+        "query_planning",
+        "query_decomposition",
+        "retrieval_planning",
         "local_retrieve",
         "quality_gate",
         "draft_answer",
@@ -81,7 +84,9 @@ async def test_agentic_rag_graph_answers_from_sufficient_local_context() -> None
         "verify_answer",
     ]
     assert result.trace[0]["intent"] == "research_qa"
-    assert result.trace[2]["sufficient"] is True
+    assert result.trace[1]["query_type"] == "simple_lookup"
+    assert result.trace[2]["query_count"] == 1
+    assert result.trace[5]["sufficient"] is True
     assert result.trace[-1]["status"] == "passed"
     assert web.calls == []
     assert result.answer == "It uses planning [1]."
@@ -120,6 +125,9 @@ async def test_agentic_rag_graph_routes_to_web_when_local_context_is_insufficien
 
     assert [event["stage"] for event in result.trace] == [
         "classify_intent",
+        "query_planning",
+        "query_decomposition",
+        "retrieval_planning",
         "local_retrieve",
         "quality_gate",
         "plan",
@@ -131,12 +139,14 @@ async def test_agentic_rag_graph_routes_to_web_when_local_context_is_insufficien
         "generate_answer",
         "verify_answer",
     ]
-    assert result.trace[2]["reason"] == "no_local_context"
-    assert result.trace[3]["step_count"] == 2
-    assert result.trace[4]["tool_name"] == "web_search"
-    assert result.trace[5]["chunk_count"] == 1
-    assert result.trace[6]["tool_name"] == "web_snippet_ingest"
-    assert result.trace[7]["snippets_ingested"] == 1
+    assert result.trace[1]["query_type"] == "comparison"
+    assert result.trace[2]["query_count"] > 1
+    assert result.trace[5]["reason"] == "no_local_context"
+    assert result.trace[6]["step_count"] == 2
+    assert result.trace[7]["tool_name"] == "web_search"
+    assert result.trace[8]["chunk_count"] == 1
+    assert result.trace[9]["tool_name"] == "web_snippet_ingest"
+    assert result.trace[10]["snippets_ingested"] == 1
     assert web.calls == [{"query": "How does Agentic RAG differ from CRAG?", "max_results": 5}]
     assert result.citations[0].chunk_id == "web:1"
 
@@ -165,6 +175,9 @@ async def test_agentic_rag_graph_respects_agent_step_limit() -> None:
 
     assert [event["stage"] for event in result.trace] == [
         "classify_intent",
+        "query_planning",
+        "query_decomposition",
+        "retrieval_planning",
         "local_retrieve",
         "quality_gate",
         "plan",
@@ -174,8 +187,8 @@ async def test_agentic_rag_graph_respects_agent_step_limit() -> None:
         "generate_answer",
         "verify_answer",
     ]
-    assert result.trace[3]["step_count"] == 1
-    assert result.trace[4]["tool_name"] == "web_search"
+    assert result.trace[6]["step_count"] == 1
+    assert result.trace[7]["tool_name"] == "web_search"
     assert "web_snippet_ingest" not in [event.get("tool_name") for event in result.trace]
 
 
@@ -202,12 +215,15 @@ async def test_agentic_rag_graph_stops_when_web_search_is_disabled() -> None:
 
     assert [event["stage"] for event in result.trace] == [
         "classify_intent",
+        "query_planning",
+        "query_decomposition",
+        "retrieval_planning",
         "local_retrieve",
         "quality_gate",
         "plan",
         "draft_answer",
     ]
-    assert result.trace[3]["step_count"] == 0
+    assert result.trace[6]["step_count"] == 0
     assert result.answer == "I don't know"
     assert web.calls == []
 
@@ -238,7 +254,7 @@ async def test_agentic_rag_graph_uses_web_fallback_when_auto_pdf_download_is_dis
         "web_snippet_ingest",
     ]
     assert result.trace[0]["intent"] == "fresh_research"
-    assert result.trace[3]["step_count"] == 2
+    assert result.trace[6]["step_count"] == 2
     assert web.calls == [{"query": "What is the latest Agentic RAG approach?", "max_results": 5}]
     assert result.answer == "Fresh systems add reflection [1]."
 
@@ -280,6 +296,11 @@ async def test_tool_executor_returns_structured_failure_when_web_search_limit_is
             "step_index": 0,
             "success": False,
             "reason": "Tool limit reached for web_search: 1/1.",
+            "tool_result": {
+                "tool_name": "web_search",
+                "success": False,
+                "error": "Tool limit reached for web_search: 1/1.",
+            },
         }
     ]
 
@@ -346,6 +367,11 @@ async def test_tool_executor_records_prepared_tool_calls() -> None:
     assert result_state["tool_calls"][0].tool_name == "web_snippet_ingest"
     assert result_state["tool_calls"][0].input == {"web_chunks": [{"id": "web:1"}]}
     assert result_state["tool_calls"][0].reason == "Persist web snippets."
+    assert result_state["trace"][0]["tool_result"] == {
+        "tool_name": "web_snippet_ingest",
+        "success": True,
+        "metadata": {"snippets_ingested": 1},
+    }
 
 
 @pytest.mark.asyncio
@@ -432,11 +458,11 @@ async def test_agentic_rag_graph_ingests_fresh_arxiv_pdf_then_retrieves_again() 
         "local_retrieve",
     ]
     assert result.trace[0]["intent"] == "fresh_research"
-    assert result.trace[3]["step_count"] == 4
-    assert result.trace[5]["paper_count"] == 1
-    assert result.trace[7]["artifact_count"] == 1
-    assert result.trace[9]["chunks_indexed"] == 8
-    assert result.trace[11]["chunk_count"] == 1
+    assert result.trace[6]["step_count"] == 4
+    assert result.trace[8]["paper_count"] == 1
+    assert result.trace[10]["artifact_count"] == 1
+    assert result.trace[12]["chunks_indexed"] == 8
+    assert result.trace[14]["chunk_count"] == 1
     assert pdf_download_tool.calls == [
         {
             "pdf_url": "https://arxiv.org/pdf/2601.12345",

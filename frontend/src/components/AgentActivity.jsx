@@ -30,10 +30,26 @@ export default function AgentActivity({ trace }) {
             <div className="agent-step-copy">
               <span className="agent-step-stage">{display.label}</span>
               {display.detail ? <span className="agent-step-detail">{display.detail}</span> : null}
+              {step.queries?.length ? (
+                <details className="agent-tool-result">
+                  <summary>Queries</summary>
+                  <ol className="agent-query-list">
+                    {step.queries.map((query, queryIndex) => (
+                      <li key={`${query}-${queryIndex}`}>{query}</li>
+                    ))}
+                  </ol>
+                </details>
+              ) : null}
               {step.tool_result ? (
                 <details className="agent-tool-result">
                   <summary>Tool result</summary>
                   <pre>{formatToolResult(step.tool_result)}</pre>
+                </details>
+              ) : null}
+              {hasStepData(step) ? (
+                <details className="agent-tool-result">
+                  <summary>Step data</summary>
+                  <pre>{formatStepData(step)}</pre>
                 </details>
               ) : null}
             </div>
@@ -47,6 +63,21 @@ export default function AgentActivity({ trace }) {
 
 function formatToolResult(toolResult) {
   return JSON.stringify(toolResult, null, 2);
+}
+
+function formatStepData(step) {
+  return JSON.stringify(stepData(step), null, 2);
+}
+
+function hasStepData(step) {
+  return Object.keys(stepData(step)).length > 0;
+}
+
+function stepData(step) {
+  const hiddenKeys = new Set(["stage", "tool_result"]);
+  return Object.fromEntries(
+    Object.entries(step).filter(([, value]) => value !== null && value !== undefined).filter(([key]) => !hiddenKeys.has(key)),
+  );
 }
 
 function iconForStep(step) {

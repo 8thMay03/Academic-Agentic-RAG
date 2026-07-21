@@ -431,6 +431,9 @@ def test_agent_trace_event_response_filters_unknown_fields() -> None:
         pdf_url="https://arxiv.org/pdf/2601.12345",
         trust_level="high",
         ingestion_status="downloaded",
+        query_type="comparison",
+        query_count=3,
+        queries=["GRU khác gì so với LSTM", "GRU", "LSTM"],
         tool_result={
             "tool_name": "web_search",
             "success": True,
@@ -448,6 +451,9 @@ def test_agent_trace_event_response_filters_unknown_fields() -> None:
         "pdf_url": "https://arxiv.org/pdf/2601.12345",
         "trust_level": "high",
         "ingestion_status": "downloaded",
+        "query_type": "comparison",
+        "query_count": 3,
+        "queries": ["GRU khác gì so với LSTM", "GRU", "LSTM"],
         "tool_result": {
             "tool_name": "web_search",
             "success": True,

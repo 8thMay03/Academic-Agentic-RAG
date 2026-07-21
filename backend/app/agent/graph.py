@@ -12,6 +12,11 @@ from app.agent.nodes.local_retrieve_node import local_retrieve_node
 from app.agent.nodes.observer_node import observer_node
 from app.agent.nodes.planner_node import planner_node
 from app.agent.nodes.quality_gate_node import quality_gate_node
+from app.agent.nodes.query_planning_node import (
+    query_decomposition_node,
+    query_planning_node,
+    retrieval_planning_node,
+)
 from app.agent.nodes.recovery_planner_node import recovery_planner_node
 from app.agent.nodes.tool_executor_node import tool_executor_node
 from app.agent.nodes.verify_answer_node import verify_answer_node
@@ -78,6 +83,9 @@ def build_agentic_rag_graph():
     graph = StateGraph(AgenticRAGState)
 
     graph.add_node("classify_intent", classify_intent_node)
+    graph.add_node("query_planning", query_planning_node)
+    graph.add_node("query_decomposition", query_decomposition_node)
+    graph.add_node("retrieval_planning", retrieval_planning_node)
     graph.add_node("local_retrieve", local_retrieve_node)
     graph.add_node("quality_gate", quality_gate_node)
     graph.add_node("plan", planner_node)
@@ -89,7 +97,10 @@ def build_agentic_rag_graph():
     graph.add_node("verify_answer", verify_answer_node)
 
     graph.set_entry_point("classify_intent")
-    graph.add_edge("classify_intent", "local_retrieve")
+    graph.add_edge("classify_intent", "query_planning")
+    graph.add_edge("query_planning", "query_decomposition")
+    graph.add_edge("query_decomposition", "retrieval_planning")
+    graph.add_edge("retrieval_planning", "local_retrieve")
     graph.add_edge("local_retrieve", "quality_gate")
     graph.add_conditional_edges(
         "quality_gate",

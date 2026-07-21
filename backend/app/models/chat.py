@@ -56,6 +56,9 @@ class AgentTraceEventResponse(BaseModel):
     suggested_action: str | None = None
     answer_chars: int | None = None
     tool_result: dict[str, Any] | None = None
+    query_type: str | None = None
+    query_count: int | None = None
+    queries: list[str] | None = None
 
 
 class ChatResponse(BaseModel):

@@ -80,6 +80,9 @@ export function agentTraceDisplay(step) {
 function agentStageLabel(stage) {
   const labels = {
     classify_intent: "Intent",
+    query_planning: "Query planning",
+    query_decomposition: "Decomposition",
+    retrieval_planning: "Retrieval plan",
     local_retrieve: "Local retrieval",
     quality_gate: "Quality gate",
     plan: "Planning",
@@ -97,6 +100,7 @@ function agentStepDetail(step) {
   const details = [];
   if (step.tool_name) details.push(formatToolName(step.tool_name));
   if (typeof step.chunk_count === "number") details.push(`${step.chunk_count} chunks`);
+  if (typeof step.query_count === "number") details.push(`${step.query_count} queries`);
   if (typeof step.step_count === "number") details.push(`${step.step_count} steps`);
   if (typeof step.paper_count === "number") details.push(`${step.paper_count} papers`);
   if (typeof step.artifact_count === "number") details.push(`${step.artifact_count} artifacts`);
