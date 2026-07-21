@@ -1,0 +1,53 @@
+{
+  "run_id": "3260ff08e0594b9da4bbe45b320acada",
+  "chat_id": "1d04e1f560974bfa80ffdda65297633f",
+  "question": "mô hình GRU khác gì so với mô hình LSTM",
+  "answer": "I don't know",
+  "citations": [],
+  "trace": [
+    {
+      "stage": "classify_intent",
+      "intent": "research_qa",
+      "reason": "default_research_question"
+    },
+    {
+      "stage": "local_retrieve",
+      "chunk_count": 5,
+      "success": true
+    },
+    {
+      "stage": "quality_gate",
+      "chunk_count": 5,
+      "sufficient": true,
+      "reason": "strong_context",
+      "context_chars": 2413,
+      "top_score": 0.9831682214886642,
+      "average_score": 0.9446801848389919,
+      "source_count": 5,
+      "query_coverage": 0.9090909090909091,
+      "self_check_used": false
+    },
+    {
+      "stage": "draft_answer",
+      "status": "ready",
+      "context_count": 5,
+      "citation_count": 5
+    },
+    {
+      "stage": "generate_answer",
+      "status": "completed",
+      "success": true,
+      "answer_chars": 12
+    },
+    {
+      "stage": "verify_answer",
+      "status": "passed",
+      "success": true,
+      "issue_count": 0,
+      "unsupported_claim_count": 0,
+      "suggested_action": "finalize"
+    }
+  ],
+  "findings": [],
+  "created_at": "2026-07-21T10:37:17.548647+00:00"
+}
