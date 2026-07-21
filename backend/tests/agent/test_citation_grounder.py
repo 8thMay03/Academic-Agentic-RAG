@@ -58,3 +58,28 @@ def test_citation_grounder_formats_display_answer_with_numbered_citations() -> N
     assert CitationGrounder().display_answer_with_numbered_citations(answer, citations) == (
         "RAG reduces retraining needs [1][2]."
     )
+
+
+def test_citation_grounder_preserves_markdown_blocks_when_numbering_citations() -> None:
+    citations = [
+        Citation(
+            paper_id="paper-1",
+            title="Random Forest",
+            chunk_id="paper-1:p1:c0",
+        ),
+    ]
+    answer = (
+        "Random Forest is an ensemble method [paper-1:p1:c0].\n\n"
+        "## How it works\n\n"
+        "- Trains many decision trees [paper-1:p1:c0].\n\n"
+        "| Step | Description |\n"
+        "|------|-------------|\n"
+        "| 1 | Bootstrap samples |\n"
+    )
+
+    display_answer = CitationGrounder().display_answer_with_numbered_citations(answer, citations)
+
+    assert "## How it works" in display_answer
+    assert "\n- Trains many decision trees [1]." in display_answer
+    assert "\n| Step | Description |\n" in display_answer
+    assert "| 1 | Bootstrap samples |" in display_answer

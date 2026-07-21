@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+import re
 
 from app.agent.citations import CitationGrounder
 from app.agent.evaluators.answer_verifier import AnswerVerifier
@@ -101,8 +102,7 @@ class AgenticChatWorkflow:
 
     @staticmethod
     async def _token_stream(answer: str) -> AsyncIterator[str]:
-        words = answer.split(" ")
-        for index, word in enumerate(words):
-            yield word if index == len(words) - 1 else f"{word} "
+        for token in re.findall(r"\S+\s*", answer):
+            yield token
 
 

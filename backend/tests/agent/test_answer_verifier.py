@@ -135,6 +135,25 @@ def test_answer_verifier_removes_uncited_claims_from_mixed_answer() -> None:
     assert result.suggested_action == "revise_answer"
 
 
+def test_answer_verifier_keeps_paragraph_claims_when_citation_closes_the_paragraph() -> None:
+    verifier = AnswerVerifier()
+    citation = Citation(
+        paper_id="paper-1",
+        title="CNN",
+        chunk_id="paper-1:p3:c0",
+        text="CNN uses convolutional filters, pooling, and local receptive fields.",
+    )
+
+    result = verifier.verify(
+        "CNN learns local visual patterns. It uses convolutional filters and pooling [paper-1:p3:c0].",
+        [citation],
+    )
+
+    assert result.answer == "CNN learns local visual patterns. It uses convolutional filters and pooling [paper-1:p3:c0]."
+    assert result.unsupported_claims == []
+    assert result.suggested_action == "finalize"
+
+
 def test_answer_verifier_keeps_arxiv_citation_ids_with_decimal_points() -> None:
     verifier = AnswerVerifier()
     citation = Citation(
@@ -151,3 +170,29 @@ def test_answer_verifier_keeps_arxiv_citation_ids_with_decimal_points() -> None:
 
     assert result.answer == "Fresh Agentic RAG uses verification [2601.12345:p2:c0]."
     assert result.unsupported_claims == ["It is always correct."]
+
+
+def test_answer_verifier_preserves_markdown_structure() -> None:
+    verifier = AnswerVerifier()
+    citation = Citation(
+        paper_id="paper-1",
+        title="Random Forest",
+        chunk_id="paper-1:p1:c0",
+        text="Random Forest trains many decision trees with bootstrap samples.",
+    )
+
+    result = verifier.verify(
+        (
+            "Random Forest is an ensemble method [paper-1:p1:c0].\n\n"
+            "## How it works\n\n"
+            "- Trains many decision trees [paper-1:p1:c0].\n\n"
+            "| Step | Description |\n"
+            "|------|-------------|\n"
+            "| 1 | Bootstrap samples |\n"
+        ),
+        [citation],
+    )
+
+    assert "## How it works" in result.answer
+    assert "\n- Trains many decision trees [paper-1:p1:c0]." in result.answer
+    assert "\n| Step | Description |\n" in result.answer

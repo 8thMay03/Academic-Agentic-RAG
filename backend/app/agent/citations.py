@@ -16,6 +16,14 @@ CITATION_PATTERN = re.compile(r"\[([^\[\]]+)\]")
 UNKNOWN_ANSWER = "I don't know"
 
 
+def normalize_answer_markdown(answer: str) -> str:
+    """Clean answer whitespace without flattening markdown blocks."""
+    normalized_lines = [re.sub(r"[ \t]+", " ", line).strip() for line in answer.strip().splitlines()]
+    normalized_answer = "\n".join(normalized_lines)
+    normalized_answer = re.sub(r"\n{3,}", "\n\n", normalized_answer)
+    return re.sub(r"[ \t]+([,.!?;:])", r"\1", normalized_answer).strip()
+
+
 class CitationGrounder:
     def build_citations(self, chunks: list[RetrievedChunk], question: str = "") -> list[Citation]:
         citations: list[Citation] = []
@@ -83,8 +91,7 @@ class CitationGrounder:
         grounded_answer = CITATION_PATTERN.sub(keep_valid_citations, answer).strip()
         if not self._answer_references_any_chunk(grounded_answer, valid_chunk_id_set):
             grounded_answer = f"{grounded_answer} [{valid_chunk_ids[0]}]"
-        grounded_answer = " ".join(grounded_answer.split())
-        return re.sub(r"\s+([,.!?;:])", r"\1", grounded_answer)
+        return normalize_answer_markdown(grounded_answer)
 
     def citations_referenced_by_answer(self, citations: list[Citation], answer: str) -> list[Citation]:
         if answer.strip() == UNKNOWN_ANSWER:
@@ -130,8 +137,7 @@ class CitationGrounder:
             return "".join(f"[{number}]" for number in numbers)
 
         display_answer = CITATION_PATTERN.sub(number_citations, answer).strip()
-        display_answer = " ".join(display_answer.split())
-        return re.sub(r"\s+([,.!?;:])", r"\1", display_answer)
+        return normalize_answer_markdown(display_answer)
 
     def _evidence_quality(self, chunk: RetrievedChunk) -> str:
         if "web" in set(chunk.get("retrieval_sources") or []):
@@ -180,5 +186,4 @@ class CitationGrounder:
     @staticmethod
     def _strip_citation_markers(answer: str) -> str:
         stripped_answer = CITATION_PATTERN.sub("", answer).strip()
-        stripped_answer = " ".join(stripped_answer.split())
-        return re.sub(r"\s+([,.!?;:])", r"\1", stripped_answer)
+        return normalize_answer_markdown(stripped_answer)

@@ -439,6 +439,10 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert "If the context does not contain enough information" in llm.prompts[0]
     assert "I don't know" in llm.prompts[0]
     assert "Every factual claim supported by retrieved context" in llm.prompts[0]
+    assert "Write a useful, substantive answer when the context is rich" in llm.prompts[0]
+    assert "Avoid one-sentence answers" in llm.prompts[0]
+    assert "compact markdown table for comparison questions" in llm.prompts[0]
+    assert "Keep the answer concise" not in llm.prompts[0]
     assert "For comparison questions" in llm.prompts[0]
     assert "[paper-1:p3:c0]" in llm.prompts[0]
 
@@ -488,6 +492,28 @@ async def test_chat_service_streams_answer_tokens_with_citations() -> None:
     assert trace[-1]["suggested_action"] == "revise_answer"
     assert trace[-1]["unsupported_claim_count"] == 0
     assert "Retrieved context" in llm.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_stream_preserves_markdown_whitespace() -> None:
+    rag = FakeRAGService(SUFFICIENT_LOCAL_CHUNKS)
+    llm = FakeLLMService(
+        (
+            "It uses planning [paper-1:p3:c0].\n\n"
+            "| Step | Detail |\n"
+            "| --- | --- |\n"
+            "| 1 | Retrieve evidence |\n"
+        )
+    )
+    workflow = AgenticChatWorkflow(rag, llm, FakeWebSearchService())
+
+    service = ChatService(workflow)
+    token_stream, _, _ = await service.stream_answer("How does planning retrieve evidence?")
+    streamed_answer = "".join([token async for token in token_stream])
+
+    assert "It uses planning [1].\n\n" in streamed_answer
+    assert "\n| Step | Detail |\n" in streamed_answer
+    assert "\n| 1 | Retrieve evidence |" in streamed_answer
 
 
 @pytest.mark.asyncio

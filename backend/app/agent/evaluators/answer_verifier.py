@@ -1,6 +1,6 @@
 import re
 
-from app.agent.citations import CITATION_PATTERN, CitationGrounder
+from app.agent.citations import CITATION_PATTERN, CitationGrounder, normalize_answer_markdown
 from app.agent.models import VerificationResult
 from app.models.citation import Citation
 
@@ -13,7 +13,7 @@ class AnswerVerifier:
         self._citation_grounder = citation_grounder or CitationGrounder()
 
     def verify(self, answer: str, citations: list[Citation]) -> VerificationResult:
-        normalized_answer = " ".join(answer.split()).strip()
+        normalized_answer = normalize_answer_markdown(answer)
         if not normalized_answer:
             return VerificationResult(
                 passed=True,
@@ -102,25 +102,41 @@ class AnswerVerifier:
 
     @staticmethod
     def _remove_uncited_claims(answer: str, valid_chunk_ids: set[str]) -> tuple[str, list[str]]:
+        if AnswerVerifier._answer_contains_markdown_blocks(answer):
+            return answer, []
+
         sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+(?!\[)", answer) if sentence.strip()]
         if len(sentences) <= 1:
             return answer, []
 
         supported_sentences = []
         unsupported_claims = []
+        pending_uncited_sentences = []
         for sentence in sentences:
-            citation_ids = {
-                citation_id
-                for match in CITATION_PATTERN.finditer(sentence)
-                for citation_id in match.group(1).replace(",", " ").replace(";", " ").split()
-            }
+            citation_ids = AnswerVerifier._sentence_citation_ids(sentence)
             if citation_ids & valid_chunk_ids:
+                supported_sentences.extend(pending_uncited_sentences)
+                pending_uncited_sentences = []
                 supported_sentences.append(sentence)
             else:
-                unsupported_claims.append(sentence)
+                pending_uncited_sentences.append(sentence)
+
+        unsupported_claims.extend(pending_uncited_sentences)
 
         if not unsupported_claims:
             return answer, []
         if not supported_sentences:
             return "", unsupported_claims
-        return " ".join(supported_sentences), unsupported_claims
+        return normalize_answer_markdown(" ".join(supported_sentences)), unsupported_claims
+
+    @staticmethod
+    def _sentence_citation_ids(sentence: str) -> set[str]:
+        return {
+            citation_id
+            for match in CITATION_PATTERN.finditer(sentence)
+            for citation_id in match.group(1).replace(",", " ").replace(";", " ").split()
+        }
+
+    @staticmethod
+    def _answer_contains_markdown_blocks(answer: str) -> bool:
+        return bool(re.search(r"(?m)^\s{0,3}(#{1,6}\s+|[-*]\s+|\|.+\|)", answer))
