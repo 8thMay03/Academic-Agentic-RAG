@@ -54,6 +54,7 @@ class AnswerPromptBuilder:
             else ""
         )
         return (
+            "Answer in the same language as the user's question. If the question is Vietnamese, answer in natural Vietnamese while preserving standard technical terms and LaTeX formulas."
             "Answer the question using only the retrieved local paper and web context below.\n"
             "Use the recent conversation only to resolve pronouns, ellipses, and follow-up references.\n"
             "If the context does not contain enough information to answer, respond exactly:\n"
