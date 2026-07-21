@@ -16,7 +16,8 @@ class WebSnippetIngestTool:
             metadata = chunk.get("metadata") or {}
             url = str(metadata.get("url") or "")
             title = str(metadata.get("title") or "")
-            chunk_id = f"web-ingest:{url or metadata.get('chunk_id', '')}"
+            source_chunk_id = str(metadata.get("chunk_id") or chunk.get("id") or "")
+            chunk_id = f"web-ingest:{source_chunk_id or url}"
             chunks_to_index.append(
                 Chunk(
                     chunk_id=chunk_id,
@@ -27,6 +28,9 @@ class WebSnippetIngestTool:
                         "title": title,
                         "url": url,
                         "source": "web",
+                        "source_type": metadata.get("source_type") or "web_page",
+                        "content_source": metadata.get("content_source") or "snippet",
+                        "source_chunk_id": source_chunk_id,
                     },
                 )
             )

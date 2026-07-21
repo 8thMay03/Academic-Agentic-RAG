@@ -28,10 +28,10 @@ class WebSearchService:
         payload = {
             "api_key": self._api_key,
             "query": query,
-            "search_depth": "basic",
+            "search_depth": "advanced",
             "max_results": max_results,
             "include_answer": False,
-            "include_raw_content": False,
+            "include_raw_content": True,
         }
 
         if self._client is not None:
@@ -51,6 +51,7 @@ class WebSearchService:
                     "title": source.get("title"),
                     "url": source.get("url"),
                     "content": source.get("content"),
+                    "raw_content": source.get("raw_content"),
                     "score": source.get("score"),
                 }
                 for source in sources

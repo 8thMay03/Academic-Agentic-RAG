@@ -51,6 +51,7 @@ class FakeWebSearchService:
                     "title": "Agentic RAG",
                     "url": "https://example.com/agentic-rag",
                     "content": "Agentic RAG plans retrieval before answering.",
+                    "raw_content": "",
                     "score": "0.82",
                 },
                 {
@@ -175,11 +176,41 @@ async def test_web_search_tool_normalizes_sources_to_chunks() -> None:
 
     assert result.success is True
     assert result.tool_name == "web_search"
-    assert result.metadata == {"chunk_count": 1, "skipped_reason": None}
+    assert result.metadata == {"chunk_count": 1, "skipped_reason": None, "raw_content_count": 0}
     assert result.chunks[0]["id"] == "web:1"
     assert result.chunks[0]["score"] == 0.82
     assert result.chunks[0]["citation"]["url"] == "https://example.com/agentic-rag"
     assert result.chunks[0]["retrieval_sources"] == ["web"]
+    assert result.chunks[0]["metadata"]["content_source"] == "snippet"
+
+
+@pytest.mark.asyncio
+async def test_web_search_tool_uses_and_chunks_raw_content() -> None:
+    class RawContentWebSearchService:
+        async def search(self, query: str, max_results: int = 5) -> WebSearchResult:
+            return WebSearchResult(
+                sources=[
+                    {
+                        "title": "GRU vs LSTM",
+                        "url": "https://example.com/gru-lstm",
+                        "content": "Short snippet.",
+                        "raw_content": " ".join(["GRU and LSTM use recurrent gates."] * 120),
+                        "score": 0.91,
+                    }
+                ]
+            )
+
+    tool = WebSearchTool(RawContentWebSearchService())
+
+    result = await tool.run({"query": "GRU vs LSTM", "max_results": 1})
+
+    assert result.success is True
+    assert result.metadata["raw_content_count"] == 1
+    assert result.metadata["chunk_count"] > 1
+    assert result.chunks[0]["id"] == "web:1:c0"
+    assert result.chunks[0]["metadata"]["content_source"] == "raw_content"
+    assert result.chunks[0]["metadata"]["source_chunk_count"] == result.metadata["chunk_count"]
+    assert "Short snippet" not in result.chunks[0]["text"]
 
 
 @pytest.mark.asyncio
@@ -215,6 +246,48 @@ async def test_web_snippet_ingest_tool_indexes_valid_snippets(monkeypatch) -> No
     assert len(indexed_chunks) == 1
     assert indexed_chunks[0].chunk_id == "web-ingest:https://example.com/agentic-rag"
     assert indexed_chunks[0].metadata["source"] == "web"
+
+
+@pytest.mark.asyncio
+async def test_web_snippet_ingest_tool_uses_source_chunk_ids_for_full_page_chunks(monkeypatch) -> None:
+    indexed_chunks = []
+
+    async def fake_index_chunks(chunks):
+        indexed_chunks.extend(chunks)
+
+    monkeypatch.setattr("app.agent.tools.web_snippet_ingest_tool.index_chunks", fake_index_chunks)
+    tool = WebSnippetIngestTool()
+
+    result = await tool.run(
+        {
+            "web_chunks": [
+                {
+                    "id": "web:1:c0",
+                    "text": "This is long enough raw page chunk zero about GRU and LSTM gates.",
+                    "metadata": {
+                        "chunk_id": "web:1:c0",
+                        "url": "https://example.com/gru-lstm",
+                        "title": "GRU vs LSTM",
+                        "content_source": "raw_content",
+                    },
+                },
+                {
+                    "id": "web:1:c1",
+                    "text": "This is long enough raw page chunk one about GRU and LSTM memory.",
+                    "metadata": {
+                        "chunk_id": "web:1:c1",
+                        "url": "https://example.com/gru-lstm",
+                        "title": "GRU vs LSTM",
+                        "content_source": "raw_content",
+                    },
+                },
+            ]
+        }
+    )
+
+    assert result.metadata == {"snippets_ingested": 2}
+    assert [chunk.chunk_id for chunk in indexed_chunks] == ["web-ingest:web:1:c0", "web-ingest:web:1:c1"]
+    assert indexed_chunks[0].metadata["content_source"] == "raw_content"
 
 
 @pytest.mark.asyncio

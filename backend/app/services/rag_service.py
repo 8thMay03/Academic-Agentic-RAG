@@ -44,7 +44,7 @@ class RAGService:
                 paper_ids=paper_ids,
             )
 
-        return chunks
+        return self._filter_by_original_question_anchors(question, chunks)
 
     async def _retrieve_with_queries(
         self,
@@ -209,6 +209,28 @@ class RAGService:
             key=RAGService._ranking_score,
             reverse=True,
         )
+
+    @staticmethod
+    def _filter_by_original_question_anchors(question: str, chunks: list[dict]) -> list[dict]:
+        anchors = RetrieverService.query_anchor_terms(question)
+        if not anchors:
+            return chunks
+
+        if RetrieverService.is_comparison_query(question) and len(anchors) > 1:
+            strict_chunks = [
+                RetrieverService.with_anchor_debug(chunk, anchors, matched_anchors)
+                for chunk in chunks
+                if (matched_anchors := RetrieverService.matched_anchor_terms(chunk, anchors))
+                and len(matched_anchors) == len(anchors)
+            ]
+            if strict_chunks:
+                return strict_chunks
+
+        return [
+            RetrieverService.with_anchor_debug(chunk, anchors, matched_anchors)
+            for chunk in chunks
+            if (matched_anchors := RetrieverService.matched_anchor_terms(chunk, anchors))
+        ]
 
     @staticmethod
     def _ranking_score(chunk: dict) -> float:

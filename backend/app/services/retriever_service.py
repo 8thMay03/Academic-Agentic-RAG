@@ -166,27 +166,33 @@ class RetrieverService:
         return filtered_results
 
     @staticmethod
-    def _query_anchor_terms(query: str) -> set[str]:
+    def query_anchor_terms(query: str) -> set[str]:
         return {
             token.lower()
             for token in query.replace("/", " ").split()
             if RetrieverService._is_anchor_token(token)
         }
 
+    _query_anchor_terms = query_anchor_terms
+
     @staticmethod
-    def _is_anchor_token(token: str) -> bool:
+    def is_anchor_token(token: str) -> bool:
         cleaned_token = "".join(character for character in token if character.isalnum() or character in {"_", "-"})
         if len(cleaned_token) < 2:
             return False
         return cleaned_token.isupper() or any(character.isdigit() for character in cleaned_token)
 
+    _is_anchor_token = is_anchor_token
+
     @staticmethod
-    def _is_comparison_query(query: str) -> bool:
+    def is_comparison_query(query: str) -> bool:
         normalized_query = " ".join(query.lower().split())
         return any(term in normalized_query for term in COMPARISON_TERMS)
 
+    _is_comparison_query = is_comparison_query
+
     @staticmethod
-    def _matched_anchor_terms(result: dict, anchors: set[str]) -> set[str]:
+    def matched_anchor_terms(result: dict, anchors: set[str]) -> set[str]:
         text = " ".join(
             str(value or "")
             for value in (
@@ -198,11 +204,15 @@ class RetrieverService:
         text_terms = set(tokenize(text))
         return anchors & text_terms
 
+    _matched_anchor_terms = matched_anchor_terms
+
     @staticmethod
-    def _with_anchor_debug(result: dict, anchors: set[str], matched_anchors: set[str]) -> dict:
+    def with_anchor_debug(result: dict, anchors: set[str], matched_anchors: set[str]) -> dict:
         return {
             **result,
             "query_anchor_terms": sorted(anchors),
             "matched_anchor_terms": sorted(matched_anchors),
             "query_anchor_coverage": len(matched_anchors) / len(anchors) if anchors else 1.0,
         }
+
+    _with_anchor_debug = with_anchor_debug
