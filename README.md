@@ -24,6 +24,7 @@ flowchart LR
     UI[React + Vite] -->|REST / NDJSON| API[FastAPI]
     API --> CHAT[ChatService]
     CHAT --> GRAPH[LangGraph Agent]
+    API --> HISTORY[(Chat history & agent runs)]
 
     GRAPH --> RAG[RAG Service]
     GRAPH --> WEB[Tavily]
@@ -34,7 +35,6 @@ flowchart LR
     RETRIEVER --> CHROMA[(ChromaDB)]
     PDF --> FILES[(Local PDFs)]
     PDF --> CHROMA
-    GRAPH --> HISTORY[(Chat history & agent runs)]
 ```
 
 ### Luồng Agentic RAG
@@ -64,6 +64,8 @@ Agent có thể sử dụng các tool:
 - `arxiv_search`: tìm paper mới trên arXiv.
 - `pdf_download`: tải PDF được phát hiện.
 - `pdf_index`: parse, chunk và index PDF vào vector store.
+
+Endpoint streaming gửi các bước agent ngay khi LangGraph thực thi. Câu trả lời hiện được sinh hoàn chỉnh rồi chia theo từ để truyền dần qua NDJSON; đây chưa phải token streaming trực tiếp từ OpenAI.
 
 ## Công nghệ
 
@@ -109,7 +111,7 @@ AI Research Assistant/
 ## Yêu cầu
 
 - Python 3.11 trở lên.
-- Node.js 20.19 trở lên nếu chạy frontend trực tiếp.
+- Node.js `^20.19.0` hoặc `>=22.12.0` nếu chạy frontend trực tiếp.
 - Docker và Docker Compose nếu chạy bằng container.
 - OpenAI API key để chat, đánh giá context và tạo embedding.
 - Tavily API key nếu bật web search fallback.
@@ -190,12 +192,22 @@ Các dịch vụ:
 
 Docker Compose ở thư mục gốc mount `backend/` vào container, vì vậy dữ liệu runtime được giữ tại `backend/data/`.
 
+Nếu chỉ cần backend:
+
+```bash
+cd backend/docker
+docker compose up --build
+```
+
 ## Cấu hình môi trường
 
 Backend đọc biến môi trường từ `backend/.env`.
 
 | Biến | Mặc định | Ý nghĩa |
 | --- | --- | --- |
+| `APP_NAME` | `AI Research Assistant` | Tên hiển thị trong OpenAPI |
+| `APP_VERSION` | `0.1.0` | Phiên bản API |
+| `API_PREFIX` | `/api/v1` | Prefix của các endpoint |
 | `OPENAI_API_KEY` | trống | API key cho LLM và embedding |
 | `OPENAI_CHAT_MODEL` | `gpt-4.1-mini` | Model sinh và đánh giá câu trả lời |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Model embedding |
@@ -210,7 +222,9 @@ Backend đọc biến môi trường từ `backend/.env`.
 | `CROSS_ENCODER_RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Model reranker |
 | `CROSS_ENCODER_FALLBACK_TO_HEURISTIC` | `true` | Dùng heuristic nếu reranker lỗi |
 
-Lưu ý: lần chạy reranker đầu tiên có thể tải model Sentence Transformers về máy.
+Frontend hỗ trợ `VITE_API_BASE_URL` để đổi địa chỉ backend; mặc định là `http://localhost:8000/api/v1`.
+
+Lưu ý: lần chạy reranker đầu tiên có thể tải model Sentence Transformers về máy. Nếu tải hoặc chạy model thất bại, hệ thống dùng heuristic khi `CROSS_ENCODER_FALLBACK_TO_HEURISTIC=true`.
 
 ## Sử dụng
 
@@ -220,7 +234,7 @@ Lưu ý: lần chạy reranker đầu tiên có thể tải model Sentence Trans
 4. Theo dõi các bước agent trong khi câu trả lời được stream.
 5. Kiểm tra citations, lịch sử chạy và research findings sau mỗi lượt.
 
-PDF tải lên chỉ được lưu vào `backend/data/pdfs`. Với cấu hình mặc định, backend sẽ index các file này khi khởi động; API và giao diện cũng hỗ trợ yêu cầu index từng file.
+PDF tải lên ban đầu chỉ được lưu vào `backend/data/pdfs`. File được index khi người dùng thêm paper làm nguồn chat trên giao diện, gọi endpoint index, hoặc khởi động lại backend với `INDEX_LOCAL_PDFS_ON_STARTUP=true`.
 
 ## API chính
 
@@ -229,6 +243,7 @@ Base path: `/api/v1`
 | Method | Endpoint | Chức năng |
 | --- | --- | --- |
 | `GET` | `/health` | Kiểm tra trạng thái API |
+| `GET` | `/papers` | Placeholder, hiện trả danh sách rỗng |
 | `GET` | `/papers/pdfs` | Liệt kê PDF cục bộ |
 | `POST` | `/papers/pdfs/upload` | Tải lên nhiều PDF |
 | `GET` | `/papers/pdfs/{filename}/content` | Xem nội dung PDF |
@@ -237,6 +252,8 @@ Base path: `/api/v1`
 | `POST` | `/chat` | Chat dạng JSON |
 | `POST` | `/chat/stream` | Chat streaming dạng NDJSON |
 | `GET` | `/chat/history` | Liệt kê các cuộc hội thoại |
+| `GET` | `/chat/history/{paper_id}` | Đọc lịch sử theo paper |
+| `DELETE` | `/chat/history/{paper_id}` | Xóa lịch sử theo paper |
 | `POST` | `/chat/sessions` | Tạo phiên chat |
 | `GET/PATCH/DELETE` | `/chat/sessions/{chat_id}` | Đọc, đổi tên hoặc xóa phiên |
 | `POST` | `/chat/sessions/{chat_id}/sources` | Thêm nguồn vào phiên |
@@ -273,7 +290,8 @@ backend/data/
 ├── pdfs/          # Paper PDF
 ├── chroma/        # Vector database
 ├── chat_history/  # Phiên và tin nhắn
-└── agent_runs/    # Trace, citations và findings
+├── agent_runs/    # Trace, citations và findings
+└── metadata/      # Manifest theo dõi trạng thái index PDF
 ```
 
 Không commit API key hoặc dữ liệu nghiên cứu nhạy cảm vào repository.
