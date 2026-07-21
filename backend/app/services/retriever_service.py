@@ -51,6 +51,7 @@ class RetrieverService:
         top_k: int = 5,
         score_threshold: float | None = None,
         paper_ids: list[str] | None = None,
+        chat_id: str | None = None,
     ) -> list[dict]:
         if top_k <= 0:
             raise ValueError("top_k must be greater than 0")
@@ -70,6 +71,8 @@ class RetrieverService:
             score_threshold=None,
             paper_ids=paper_ids,
         )
+        vector_results = self._filter_by_chat_scope(vector_results, chat_id)
+        keyword_results = self._filter_by_chat_scope(keyword_results, chat_id)
 
         merged_results = self._merge_results(vector_results, keyword_results)
         if score_threshold is not None:
@@ -105,6 +108,31 @@ class RetrieverService:
             scored_results.append(result)
 
         return sorted(scored_results, key=lambda result: result["score"], reverse=True)
+
+    @classmethod
+    def _filter_by_chat_scope(cls, results: list[dict], chat_id: str | None) -> list[dict]:
+        return [
+            result
+            for result in results
+            if cls._is_visible_in_chat_scope(result, chat_id)
+        ]
+
+    @classmethod
+    def _is_visible_in_chat_scope(cls, result: dict, chat_id: str | None) -> bool:
+        metadata = result.get("metadata") or {}
+        if not cls._is_web_ingested_result(result):
+            return True
+        return bool(chat_id and metadata.get("chat_id") == chat_id)
+
+    @staticmethod
+    def _is_web_ingested_result(result: dict) -> bool:
+        metadata = result.get("metadata") or {}
+        result_id = str(result.get("id") or metadata.get("chunk_id") or "")
+        return (
+            result_id.startswith("web-ingest:")
+            or metadata.get("source") == "web"
+            or metadata.get("source_type") == "web_page"
+        )
 
     @staticmethod
     def _result_key(result: dict) -> str:

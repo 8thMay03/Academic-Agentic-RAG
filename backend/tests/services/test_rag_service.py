@@ -19,6 +19,7 @@ class FakeRetrieverService:
         top_k: int = 5,
         score_threshold: float | None = None,
         paper_ids: list[str] | None = None,
+        chat_id: str | None = None,
     ) -> list[dict]:
         self.query = query
         self.top_k = top_k
@@ -30,6 +31,7 @@ class FakeRetrieverService:
                 "top_k": top_k,
                 "score_threshold": score_threshold,
                 "paper_ids": paper_ids,
+                "chat_id": chat_id,
             }
         )
         return self.chunks
@@ -46,6 +48,7 @@ class QueryAwareRetrieverService:
         top_k: int = 5,
         score_threshold: float | None = None,
         paper_ids: list[str] | None = None,
+        chat_id: str | None = None,
     ) -> list[dict]:
         self.calls.append(
             {
@@ -53,6 +56,7 @@ class QueryAwareRetrieverService:
                 "top_k": top_k,
                 "score_threshold": score_threshold,
                 "paper_ids": paper_ids,
+                "chat_id": chat_id,
             }
         )
         return self.chunks_by_query.get(query, [])
@@ -68,6 +72,7 @@ class ThresholdSensitiveRetrieverService:
         top_k: int = 5,
         score_threshold: float | None = None,
         paper_ids: list[str] | None = None,
+        chat_id: str | None = None,
     ) -> list[dict]:
         self.calls.append(
             {
@@ -75,6 +80,7 @@ class ThresholdSensitiveRetrieverService:
                 "top_k": top_k,
                 "score_threshold": score_threshold,
                 "paper_ids": paper_ids,
+                "chat_id": chat_id,
             }
         )
         return [] if score_threshold else [RETRIEVED_CHUNK]
@@ -135,12 +141,14 @@ async def test_rag_service_retries_without_threshold_when_context_is_missing() -
             "top_k": 3,
             "score_threshold": 0.7,
             "paper_ids": None,
+            "chat_id": None,
         },
         {
             "query": "What is the method?",
             "top_k": 3,
             "score_threshold": None,
             "paper_ids": None,
+            "chat_id": None,
         },
     ]
 
@@ -237,3 +245,55 @@ async def test_rag_service_retrieves_with_multi_query_and_deduplicates_chunks() 
         "non-planning baseline experiments",
     ]
     assert [chunk["id"] for chunk in chunks] == ["paper-1:p3:c0", "paper-1:p4:c0"]
+
+
+@pytest.mark.asyncio
+async def test_rag_service_filters_multi_query_results_by_original_question_anchor() -> None:
+    cnn_chunk = {
+        **RETRIEVED_CHUNK,
+        "id": "cnn:p1:c0",
+        "text": "CNN uses convolutional filters for local feature extraction.",
+        "metadata": {
+            "paper_id": "cnn-paper",
+            "title": "CNN overview",
+            "chunk_id": "cnn:p1:c0",
+        },
+        "rerank_score": 0.7,
+        "citation": {
+            "paper_id": "cnn-paper",
+            "title": "CNN overview",
+            "chunk_id": "cnn:p1:c0",
+            "text": "CNN uses convolutional filters for local feature extraction.",
+        },
+    }
+    lstm_chunk = {
+        **RETRIEVED_CHUNK,
+        "id": "web-ingest:lstm",
+        "text": "LSTM is a recurrent neural network for sequence data.",
+        "metadata": {
+            "paper_id": "https://example.com/lstm",
+            "title": "LSTM là gì?",
+            "chunk_id": "web-ingest:lstm",
+            "source": "web",
+        },
+        "rerank_score": 0.99,
+        "citation": {
+            "paper_id": "https://example.com/lstm",
+            "title": "LSTM là gì?",
+            "chunk_id": "web-ingest:lstm",
+            "text": "LSTM is a recurrent neural network for sequence data.",
+        },
+    }
+    retriever = QueryAwareRetrieverService(
+        {
+            "CNN là gì": [cnn_chunk],
+            "neural network sequence model": [lstm_chunk],
+        }
+    )
+    llm = FakeLLMService('["neural network sequence model"]')
+    service = RAGService(retriever, llm)
+
+    chunks = await service.retrieve_context("CNN là gì", top_k=3)
+
+    assert [chunk["id"] for chunk in chunks] == ["cnn:p1:c0"]
+    assert chunks[0]["matched_anchor_terms"] == ["cnn"]

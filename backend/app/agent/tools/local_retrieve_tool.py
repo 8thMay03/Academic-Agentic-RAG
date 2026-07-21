@@ -13,6 +13,7 @@ class LocalRetrieveTool:
         chunks = normalize_retrieved_chunks(
             await self._rag_service.retrieve_context(
                 question=str(input["question"]),
+                chat_id=input.get("chat_id"),
                 paper_ids=input.get("paper_ids"),
                 top_k=int(input.get("top_k", 5)),
                 score_threshold=input.get("score_threshold", 0.65),
@@ -32,6 +33,7 @@ class LocalRetrieveTool:
 
 def local_retrieve_input(
     question: str,
+    chat_id: str | None,
     paper_ids: list[str] | None,
     top_k: int,
     score_threshold: float | None,
@@ -39,6 +41,7 @@ def local_retrieve_input(
 ) -> dict:
     return {
         "question": question,
+        "chat_id": chat_id,
         "paper_ids": paper_ids,
         "top_k": top_k,
         "score_threshold": score_threshold,

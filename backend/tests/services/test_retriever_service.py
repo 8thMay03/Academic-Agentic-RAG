@@ -138,6 +138,60 @@ class AnchorVectorStore:
         return []
 
 
+class ChatScopedWebVectorStore:
+    async def similarity_search(
+        self,
+        query: str,
+        top_k: int = 5,
+        score_threshold: float | None = None,
+        paper_ids: list[str] | None = None,
+    ) -> list[dict]:
+        return [
+            {
+                "id": "web-ingest:old-lstm",
+                "text": "LSTM is a recurrent neural network for sequence modeling.",
+                "metadata": {
+                    "chunk_id": "web-ingest:old-lstm",
+                    "title": "LSTM là gì?",
+                    "source": "web",
+                },
+                "score": 0.99,
+                "citation": {"title": "LSTM là gì?"},
+            },
+            {
+                "id": "web-ingest:chat-cnn",
+                "text": "CNN uses convolutional layers for image feature extraction.",
+                "metadata": {
+                    "chunk_id": "web-ingest:chat-cnn",
+                    "title": "CNN guide",
+                    "source": "web",
+                    "chat_id": "chat-1",
+                },
+                "score": 0.83,
+                "citation": {"title": "CNN guide"},
+            },
+            {
+                "id": "local-cnn",
+                "text": "CNN applies convolution filters to local receptive fields.",
+                "metadata": {
+                    "chunk_id": "local-cnn",
+                    "title": "CNN paper",
+                },
+                "score": 0.72,
+                "citation": {"title": "CNN paper"},
+            },
+        ]
+
+    async def keyword_search(
+        self,
+        query: str,
+        top_k: int = 5,
+        score_threshold: float | None = None,
+        paper_ids: list[str] | None = None,
+    ) -> list[dict]:
+        return []
+
+
 @pytest.mark.asyncio
 async def test_retriever_service_merges_vector_and_keyword_results_before_reranking() -> None:
     vector_store = FakeVectorStore()
@@ -197,3 +251,24 @@ async def test_retriever_service_filters_high_scoring_results_without_query_anch
     assert results[0]["query_anchor_terms"] == ["gru", "lstm"]
     assert results[0]["matched_anchor_terms"] == ["gru", "lstm"]
     assert results[0]["query_anchor_coverage"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_retriever_service_hides_global_web_ingest_without_matching_chat_id() -> None:
+    service = RetrieverService(
+        vector_store=ChatScopedWebVectorStore(),
+        reranker_service=RankingRerankerService(
+            {
+                "web-ingest:old-lstm": 0.99,
+                "web-ingest:chat-cnn": 0.95,
+                "local-cnn": 0.72,
+            }
+        ),
+        candidate_multiplier=2,
+    )
+
+    results_without_chat = await service.retrieve("CNN là gì", top_k=3, score_threshold=0.25)
+    results_with_chat = await service.retrieve("CNN là gì", top_k=3, score_threshold=0.25, chat_id="chat-1")
+
+    assert [result["id"] for result in results_without_chat] == ["local-cnn"]
+    assert [result["id"] for result in results_with_chat] == ["web-ingest:chat-cnn", "local-cnn"]

@@ -19,6 +19,9 @@ def prepare_tool_input(
     tool_input = dict(step_input)
     if tool_name == "web_snippet_ingest":
         tool_input["web_chunks"] = state.get("web_chunks", [])
+        request = state.get("request")
+        if request and getattr(request, "chat_id", None):
+            tool_input["chat_id"] = request.chat_id
     elif tool_name == "pdf_download":
         pdf_source = first_pdf_source(state.get("tool_results", []))
         if not pdf_source:

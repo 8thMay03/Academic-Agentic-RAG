@@ -8,6 +8,7 @@ class WebSnippetIngestTool:
 
     async def run(self, input: dict) -> ToolResult:
         web_chunks = input.get("web_chunks") or []
+        chat_id = str(input.get("chat_id") or "")
         chunks_to_index: list[Chunk] = []
         for chunk in web_chunks:
             text = str(chunk.get("text") or "")
@@ -18,28 +19,35 @@ class WebSnippetIngestTool:
             title = str(metadata.get("title") or "")
             source_chunk_id = str(metadata.get("chunk_id") or chunk.get("id") or "")
             chunk_id = f"web-ingest:{source_chunk_id or url}"
+            chunk_metadata = {
+                "chunk_id": chunk_id,
+                "title": title,
+                "url": url,
+                "source": "web",
+                "source_type": metadata.get("source_type") or "web_page",
+                "content_source": metadata.get("content_source") or "snippet",
+                "source_chunk_id": source_chunk_id,
+            }
+            if chat_id:
+                chunk_metadata["chat_id"] = chat_id
             chunks_to_index.append(
                 Chunk(
                     chunk_id=chunk_id,
                     paper_id=url or chunk_id,
                     text=text,
-                    metadata={
-                        "chunk_id": chunk_id,
-                        "title": title,
-                        "url": url,
-                        "source": "web",
-                        "source_type": metadata.get("source_type") or "web_page",
-                        "content_source": metadata.get("content_source") or "snippet",
-                        "source_chunk_id": source_chunk_id,
-                    },
+                    metadata=chunk_metadata,
                 )
             )
 
         if chunks_to_index:
             await index_chunks(chunks_to_index)
 
+        result_metadata = {"snippets_ingested": len(chunks_to_index)}
+        if chat_id:
+            result_metadata["chat_id"] = chat_id
+
         return ToolResult(
             tool_name=self.name,
             success=True,
-            metadata={"snippets_ingested": len(chunks_to_index)},
+            metadata=result_metadata,
         )

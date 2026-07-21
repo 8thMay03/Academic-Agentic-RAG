@@ -78,6 +78,7 @@ def _fresh_research_steps(request) -> list[ResearchPlanStep]:
             reason="Retrieve again after ingesting fresh research.",
             input={
                 "question": request.question,
+                "chat_id": request.chat_id,
                 "paper_ids": request.paper_ids,
                 "top_k": request.top_k,
                 "score_threshold": request.score_threshold,

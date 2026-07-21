@@ -1,6 +1,6 @@
 import asyncio
 
-from app.agent.models import AgentLimits, ToolResult
+from app.agent.models import AgentLimits, ChatWorkflowRequest, ToolResult
 from app.agent.tools.execution import (
     prepare_tool_input,
     run_tool_with_timeout,
@@ -30,6 +30,20 @@ def test_prepare_tool_input_injects_web_chunks_for_snippet_ingest():
 
     assert prepared.error is None
     assert prepared.input == {"extra": True, "web_chunks": web_chunks}
+
+
+def test_prepare_tool_input_injects_chat_id_for_snippet_ingest():
+    prepared = prepare_tool_input(
+        "web_snippet_ingest",
+        {},
+        {
+            "request": ChatWorkflowRequest(question="CNN là gì", chat_id="chat-1"),
+            "web_chunks": [{"id": "web:1"}],
+        },
+    )
+
+    assert prepared.error is None
+    assert prepared.input == {"web_chunks": [{"id": "web:1"}], "chat_id": "chat-1"}
 
 
 def test_prepare_tool_input_uses_first_pdf_url_for_download():

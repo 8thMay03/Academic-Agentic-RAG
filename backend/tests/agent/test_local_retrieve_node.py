@@ -25,6 +25,7 @@ async def test_local_retrieve_node_uses_tool_contract():
     tool_registry = FakeToolRegistry(ToolResult(tool_name="local_retrieve", success=True, chunks=[chunk]))
     request = ChatWorkflowRequest(
         question="How does Agentic RAG retrieve?",
+        chat_id="chat-1",
         paper_ids=["paper-1"],
         top_k=3,
         score_threshold=0.7,
@@ -39,6 +40,7 @@ async def test_local_retrieve_node_uses_tool_contract():
             "tool_name": "local_retrieve",
             "input": {
                 "question": "How does Agentic RAG retrieve?",
+                "chat_id": "chat-1",
                 "paper_ids": ["paper-1"],
                 "top_k": 3,
                 "score_threshold": 0.7,

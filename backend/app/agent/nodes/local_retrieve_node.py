@@ -11,6 +11,7 @@ async def local_retrieve_node(state: AgenticRAGState) -> AgenticRAGState:
         "local_retrieve",
         local_retrieve_input(
             question=request.question,
+            chat_id=request.chat_id,
             paper_ids=request.paper_ids,
             top_k=request.top_k,
             score_threshold=request.score_threshold,

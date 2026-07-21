@@ -24,6 +24,7 @@ class FakeRAGService:
     async def retrieve_context(
         self,
         question,
+        chat_id=None,
         paper_ids=None,
         top_k=5,
         score_threshold=0.65,
@@ -32,6 +33,7 @@ class FakeRAGService:
         self.calls.append(
             {
                 "question": question,
+                "chat_id": chat_id,
                 "paper_ids": paper_ids,
                 "top_k": top_k,
                 "score_threshold": score_threshold,
@@ -135,6 +137,7 @@ async def test_local_retrieve_tool_delegates_to_rag_service() -> None:
     result = await tool.run(
         local_retrieve_input(
             question="What is the method?",
+            chat_id="chat-1",
             paper_ids=["paper-1"],
             top_k=3,
             score_threshold=0.7,
@@ -160,6 +163,7 @@ async def test_local_retrieve_tool_delegates_to_rag_service() -> None:
     assert rag.calls == [
         {
             "question": "What is the method?",
+            "chat_id": "chat-1",
             "paper_ids": ["paper-1"],
             "top_k": 3,
             "score_threshold": 0.7,
@@ -288,6 +292,37 @@ async def test_web_snippet_ingest_tool_uses_source_chunk_ids_for_full_page_chunk
     assert result.metadata == {"snippets_ingested": 2}
     assert [chunk.chunk_id for chunk in indexed_chunks] == ["web-ingest:web:1:c0", "web-ingest:web:1:c1"]
     assert indexed_chunks[0].metadata["content_source"] == "raw_content"
+
+
+@pytest.mark.asyncio
+async def test_web_snippet_ingest_tool_scopes_chunks_to_chat(monkeypatch) -> None:
+    indexed_chunks = []
+
+    async def fake_index_chunks(chunks):
+        indexed_chunks.extend(chunks)
+
+    monkeypatch.setattr("app.agent.tools.web_snippet_ingest_tool.index_chunks", fake_index_chunks)
+    tool = WebSnippetIngestTool()
+
+    result = await tool.run(
+        {
+            "chat_id": "chat-1",
+            "web_chunks": [
+                {
+                    "id": "web:1",
+                    "text": "This is long enough web content about CNN convolution filters.",
+                    "metadata": {
+                        "chunk_id": "web:1",
+                        "url": "https://example.com/cnn",
+                        "title": "CNN",
+                    },
+                }
+            ],
+        }
+    )
+
+    assert result.metadata == {"snippets_ingested": 1, "chat_id": "chat-1"}
+    assert indexed_chunks[0].metadata["chat_id"] == "chat-1"
 
 
 @pytest.mark.asyncio

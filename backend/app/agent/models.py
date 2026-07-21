@@ -8,6 +8,7 @@ from app.models.citation import Citation
 @dataclass(frozen=True)
 class ChatWorkflowRequest:
     question: str
+    chat_id: str | None = None
     paper_ids: list[str] | None = None
     top_k: int = 5
     score_threshold: float | None = 0.65

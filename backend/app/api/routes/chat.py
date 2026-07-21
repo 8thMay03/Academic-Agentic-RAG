@@ -46,6 +46,7 @@ async def chat_with_papers(
 
     result = await chat_service.answer(
         question=request.question,
+        chat_id=request.chat_id,
         paper_ids=paper_ids,
         top_k=request.top_k,
         score_threshold=request.score_threshold,
@@ -99,6 +100,7 @@ async def stream_chat_with_papers(
         try:
             async for event in chat_service.stream_events(
                 question=request.question,
+                chat_id=request.chat_id,
                 paper_ids=paper_ids,
                 top_k=request.top_k,
                 score_threshold=request.score_threshold,

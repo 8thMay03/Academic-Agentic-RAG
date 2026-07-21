@@ -17,6 +17,7 @@ class ChatService:
     async def answer(
         self,
         question: str,
+        chat_id: str | None = None,
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.65,
@@ -29,6 +30,7 @@ class ChatService:
         return await self._workflow.run(
             ChatWorkflowRequest(
                 question=question,
+                chat_id=chat_id,
                 paper_ids=paper_ids,
                 top_k=top_k,
                 score_threshold=score_threshold,
@@ -43,6 +45,7 @@ class ChatService:
     async def stream_answer(
         self,
         question: str,
+        chat_id: str | None = None,
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.65,
@@ -55,6 +58,7 @@ class ChatService:
         return await self._workflow.stream(
             ChatWorkflowRequest(
                 question=question,
+                chat_id=chat_id,
                 paper_ids=paper_ids,
                 top_k=top_k,
                 score_threshold=score_threshold,
@@ -69,6 +73,7 @@ class ChatService:
     async def stream_events(
         self,
         question: str,
+        chat_id: str | None = None,
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.65,
@@ -81,6 +86,7 @@ class ChatService:
         async for event in self._workflow.stream_events(
             ChatWorkflowRequest(
                 question=question,
+                chat_id=chat_id,
                 paper_ids=paper_ids,
                 top_k=top_k,
                 score_threshold=score_threshold,

@@ -23,6 +23,7 @@ class RAGService:
     async def retrieve_context(
         self,
         question: str,
+        chat_id: str | None = None,
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float | None = 0.65,
@@ -34,6 +35,7 @@ class RAGService:
             top_k,
             score_threshold=score_threshold,
             paper_ids=paper_ids,
+            chat_id=chat_id,
         )
 
         if not chunks and score_threshold is not None and score_threshold > 0:
@@ -42,8 +44,10 @@ class RAGService:
                 top_k,
                 score_threshold=None,
                 paper_ids=paper_ids,
+                chat_id=chat_id,
             )
 
+        chunks = self._filter_by_chat_scope(chunks, chat_id)
         return self._filter_by_original_question_anchors(question, chunks)
 
     async def _retrieve_with_queries(
@@ -52,6 +56,7 @@ class RAGService:
         top_k: int,
         score_threshold: float | None,
         paper_ids: list[str] | None,
+        chat_id: str | None,
     ) -> list[dict]:
         retrieved_chunks = []
         for retrieval_query in retrieval_queries:
@@ -60,6 +65,7 @@ class RAGService:
                 top_k=top_k,
                 score_threshold=score_threshold,
                 paper_ids=paper_ids,
+                chat_id=chat_id,
             )
             retrieved_chunks.extend(self._filter_by_paper_ids(chunks, paper_ids))
 
@@ -208,6 +214,25 @@ class RAGService:
             merged_chunks.values(),
             key=RAGService._ranking_score,
             reverse=True,
+        )
+
+    @staticmethod
+    def _filter_by_chat_scope(chunks: list[dict], chat_id: str | None) -> list[dict]:
+        return [
+            chunk
+            for chunk in chunks
+            if not RAGService._is_web_ingested_chunk(chunk)
+            or (chat_id and (chunk.get("metadata") or {}).get("chat_id") == chat_id)
+        ]
+
+    @staticmethod
+    def _is_web_ingested_chunk(chunk: dict) -> bool:
+        metadata = chunk.get("metadata") or {}
+        chunk_id = str((chunk.get("citation") or {}).get("chunk_id") or metadata.get("chunk_id") or chunk.get("id") or "")
+        return (
+            chunk_id.startswith("web-ingest:")
+            or metadata.get("source") == "web"
+            or metadata.get("source_type") == "web_page"
         )
 
     @staticmethod

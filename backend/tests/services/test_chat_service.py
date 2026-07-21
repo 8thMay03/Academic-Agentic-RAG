@@ -20,6 +20,7 @@ class FakeRAGService:
     async def retrieve_context(
         self,
         question: str,
+        chat_id: str | None = None,
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float | None = 0.65,
@@ -28,6 +29,7 @@ class FakeRAGService:
         self.calls.append(
             {
                 "question": question,
+                "chat_id": chat_id,
                 "paper_ids": paper_ids,
                 "top_k": top_k,
                 "score_threshold": score_threshold,
@@ -198,6 +200,7 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
     assert rag.calls == [
         {
             "question": "What is the method?",
+            "chat_id": None,
             "paper_ids": None,
             "top_k": 3,
             "score_threshold": 0.7,

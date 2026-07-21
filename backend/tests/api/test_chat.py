@@ -49,6 +49,7 @@ class FakeChatService:
     async def answer(
         self,
         question: str,
+        chat_id: str | None = None,
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.65,
@@ -59,6 +60,7 @@ class FakeChatService:
         auto_download_pdfs: bool = True,
     ) -> ChatWorkflowResult:
         assert question == "What is the method?"
+        assert chat_id is None
         assert paper_ids == ["paper-1"]
         assert top_k == 3
         assert score_threshold == 0.7
@@ -100,6 +102,7 @@ class FakeChatService:
     async def stream_answer(
         self,
         question: str,
+        chat_id: str | None = None,
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.65,
@@ -110,6 +113,7 @@ class FakeChatService:
         auto_download_pdfs: bool = True,
     ):
         assert question == "What is the method?"
+        assert chat_id is None
         assert paper_ids == ["paper-1"]
         assert top_k == 3
         assert score_threshold == 0.7
@@ -156,6 +160,7 @@ class FakeChatService:
     async def stream_events(
         self,
         question: str,
+        chat_id: str | None = None,
         paper_ids: list[str] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.65,
@@ -167,6 +172,7 @@ class FakeChatService:
     ):
         token_stream, citations, trace = await self.stream_answer(
             question=question,
+            chat_id=chat_id,
             paper_ids=paper_ids,
             top_k=top_k,
             score_threshold=score_threshold,
@@ -356,6 +362,7 @@ def test_chat_session_without_sources_searches_all_local_documents() -> None:
         async def answer(
             self,
             question: str,
+            chat_id: str | None = None,
             paper_ids: list[str] | None = None,
             top_k: int = 5,
             score_threshold: float = 0.65,
@@ -366,6 +373,7 @@ def test_chat_session_without_sources_searches_all_local_documents() -> None:
             auto_download_pdfs: bool = True,
         ) -> ChatWorkflowResult:
             assert question == "What is CRAG?"
+            assert chat_id == "chat-1"
             assert paper_ids is None
             assert chat_history == []
             assert max_agent_steps == 6
