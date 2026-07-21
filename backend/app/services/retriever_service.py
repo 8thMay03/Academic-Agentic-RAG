@@ -1,6 +1,21 @@
 from app.config.settings import settings
 from app.services.reranker_service import RerankerService
+from app.vectorstore.bm25 import tokenize
 from app.vectorstore.chroma import ChromaVectorStore
+
+
+COMPARISON_TERMS = {
+    "compare",
+    "compared",
+    "difference",
+    "differences",
+    "different",
+    "versus",
+    "vs",
+    "khac",
+    "khác",
+    "so với",
+}
 
 
 class RetrieverService:
@@ -64,7 +79,9 @@ class RetrieverService:
                 if float(result.get("score", 0.0)) >= score_threshold
             ]
 
-        return self._reranker_service.rerank(query, merged_results)[:top_k]
+        reranked_results = self._reranker_service.rerank(query, merged_results)
+        relevant_results = self._filter_by_query_anchors(query, reranked_results)
+        return relevant_results[:top_k]
 
     def _merge_results(self, vector_results: list[dict], keyword_results: list[dict]) -> list[dict]:
         merged_results: dict[str, dict] = {}
@@ -123,3 +140,69 @@ class RetrieverService:
         if active_weight == 0:
             return 0.0
         return weighted_score / active_weight
+
+    @classmethod
+    def _filter_by_query_anchors(cls, query: str, results: list[dict]) -> list[dict]:
+        anchors = cls._query_anchor_terms(query)
+        if not anchors:
+            return results
+
+        comparison_query = cls._is_comparison_query(query)
+        if comparison_query and len(anchors) > 1:
+            strict_results = [
+                cls._with_anchor_debug(result, anchors, matched_anchors)
+                for result in results
+                if (matched_anchors := cls._matched_anchor_terms(result, anchors))
+                and len(matched_anchors) == len(anchors)
+            ]
+            if strict_results:
+                return strict_results
+
+        filtered_results = [
+            cls._with_anchor_debug(result, anchors, matched_anchors)
+            for result in results
+            if (matched_anchors := cls._matched_anchor_terms(result, anchors))
+        ]
+        return filtered_results
+
+    @staticmethod
+    def _query_anchor_terms(query: str) -> set[str]:
+        return {
+            token.lower()
+            for token in query.replace("/", " ").split()
+            if RetrieverService._is_anchor_token(token)
+        }
+
+    @staticmethod
+    def _is_anchor_token(token: str) -> bool:
+        cleaned_token = "".join(character for character in token if character.isalnum() or character in {"_", "-"})
+        if len(cleaned_token) < 2:
+            return False
+        return cleaned_token.isupper() or any(character.isdigit() for character in cleaned_token)
+
+    @staticmethod
+    def _is_comparison_query(query: str) -> bool:
+        normalized_query = " ".join(query.lower().split())
+        return any(term in normalized_query for term in COMPARISON_TERMS)
+
+    @staticmethod
+    def _matched_anchor_terms(result: dict, anchors: set[str]) -> set[str]:
+        text = " ".join(
+            str(value or "")
+            for value in (
+                result.get("text"),
+                (result.get("metadata") or {}).get("title"),
+                (result.get("citation") or {}).get("title"),
+            )
+        )
+        text_terms = set(tokenize(text))
+        return anchors & text_terms
+
+    @staticmethod
+    def _with_anchor_debug(result: dict, anchors: set[str], matched_anchors: set[str]) -> dict:
+        return {
+            **result,
+            "query_anchor_terms": sorted(anchors),
+            "matched_anchor_terms": sorted(matched_anchors),
+            "query_anchor_coverage": len(matched_anchors) / len(anchors) if anchors else 1.0,
+        }

@@ -80,6 +80,64 @@ class FakeRerankerService:
         return sorted(chunks, key=lambda chunk: chunk["id"])
 
 
+class RankingRerankerService:
+    def __init__(self, scores_by_id: dict[str, float]) -> None:
+        self._scores_by_id = scores_by_id
+
+    def rerank(self, query: str, chunks: list[dict]) -> list[dict]:
+        reranked_chunks = []
+        for chunk in chunks:
+            reranked_chunks.append(
+                {
+                    **chunk,
+                    "rerank_score": self._scores_by_id.get(chunk["id"], 0.0),
+                    "reranker": "fake",
+                }
+            )
+        return sorted(reranked_chunks, key=lambda chunk: chunk["rerank_score"], reverse=True)
+
+
+class AnchorVectorStore:
+    async def similarity_search(
+        self,
+        query: str,
+        top_k: int = 5,
+        score_threshold: float | None = None,
+        paper_ids: list[str] | None = None,
+    ) -> list[dict]:
+        return [
+            {
+                "id": "rag-web",
+                "text": "Retrieval augmented generation optimizes language model outputs.",
+                "metadata": {
+                    "chunk_id": "rag-web",
+                    "title": "RAG là gì?",
+                },
+                "score": 0.99,
+                "citation": {"title": "RAG là gì?"},
+            },
+            {
+                "id": "gru-lstm",
+                "text": "GRU and LSTM are recurrent neural networks with different gating mechanisms.",
+                "metadata": {
+                    "chunk_id": "gru-lstm",
+                    "title": "GRU vs LSTM",
+                },
+                "score": 0.42,
+                "citation": {"title": "GRU vs LSTM"},
+            },
+        ]
+
+    async def keyword_search(
+        self,
+        query: str,
+        top_k: int = 5,
+        score_threshold: float | None = None,
+        paper_ids: list[str] | None = None,
+    ) -> list[dict]:
+        return []
+
+
 @pytest.mark.asyncio
 async def test_retriever_service_merges_vector_and_keyword_results_before_reranking() -> None:
     vector_store = FakeVectorStore()
@@ -119,3 +177,23 @@ async def test_retriever_service_merges_vector_and_keyword_results_before_rerank
     assert results[1]["id"] == "chunk-shared"
     assert results[1]["retrieval_sources"] == ["keyword", "vector"]
     assert results[1]["score"] == pytest.approx(0.88)
+
+
+@pytest.mark.asyncio
+async def test_retriever_service_filters_high_scoring_results_without_query_anchors() -> None:
+    service = RetrieverService(
+        vector_store=AnchorVectorStore(),
+        reranker_service=RankingRerankerService({"rag-web": 0.99, "gru-lstm": 0.72}),
+        candidate_multiplier=2,
+    )
+
+    results = await service.retrieve(
+        "mô hình GRU khác gì so với LSTM",
+        top_k=2,
+        score_threshold=0.25,
+    )
+
+    assert [result["id"] for result in results] == ["gru-lstm"]
+    assert results[0]["query_anchor_terms"] == ["gru", "lstm"]
+    assert results[0]["matched_anchor_terms"] == ["gru", "lstm"]
+    assert results[0]["query_anchor_coverage"] == 1.0

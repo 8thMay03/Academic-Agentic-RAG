@@ -75,6 +75,9 @@ def _compact_chunk(chunk: dict) -> dict:
             "url": citation.get("url") or metadata.get("url") or metadata.get("source_url"),
             "score": chunk.get("score"),
             "rerank_score": chunk.get("rerank_score"),
+            "query_anchor_terms": chunk.get("query_anchor_terms"),
+            "matched_anchor_terms": chunk.get("matched_anchor_terms"),
+            "query_anchor_coverage": chunk.get("query_anchor_coverage"),
             "text": _compact_text(chunk.get("text") or citation.get("text") or ""),
         }.items()
         if value not in (None, "")

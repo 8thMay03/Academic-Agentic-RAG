@@ -56,6 +56,25 @@ def test_answer_verifier_revises_answer_that_omits_explicit_citations() -> None:
     assert result.suggested_action == "revise_answer"
 
 
+def test_answer_verifier_requests_more_retrieval_when_model_answers_unknown_with_evidence() -> None:
+    verifier = AnswerVerifier()
+    citation = Citation(
+        paper_id="paper-1",
+        title="GRU vs LSTM",
+        chunk_id="paper-1:p3:c0",
+        text="GRU and LSTM use different gating mechanisms.",
+    )
+
+    result = verifier.verify("I don't know", [citation])
+
+    assert result.passed is False
+    assert result.answer == "I don't know"
+    assert result.citations == []
+    assert result.issues == ["answer_unknown_despite_available_evidence"]
+    assert result.unsupported_claims == ["I don't know"]
+    assert result.suggested_action == "retrieve_more"
+
+
 def test_answer_verifier_requests_more_retrieval_for_unusable_citation_ids() -> None:
     verifier = AnswerVerifier()
     citation = Citation(

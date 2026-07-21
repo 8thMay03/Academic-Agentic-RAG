@@ -1,6 +1,6 @@
 import pytest
 
-from app.agent.models import ToolResult
+from app.agent.models import ContextQuality, ToolResult
 from app.agent.tools.registry import ToolRegistry
 from app.models.chat import ChatHistoryMessage
 from app.agent.workflow import (
@@ -62,6 +62,20 @@ class FakeWebSearchService:
     async def search(self, query: str, max_results: int = 5) -> WebSearchResult:
         self.calls.append({"query": query, "max_results": max_results})
         return WebSearchResult(sources=self.sources)
+
+
+class SufficientQualityEvaluator:
+    async def evaluate(self, question: str, chunks: list[dict]) -> ContextQuality:
+        return ContextQuality(
+            sufficient=True,
+            reason="test_sufficient_context",
+            chunk_count=len(chunks),
+            context_chars=sum(len(chunk.get("text", "")) for chunk in chunks),
+            top_score=0.91,
+            average_score=0.9,
+            source_count=1,
+            query_coverage=1.0,
+        )
 
 
 RETRIEVED_CHUNK = {
@@ -422,6 +436,7 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert "If the context does not contain enough information" in llm.prompts[0]
     assert "I don't know" in llm.prompts[0]
     assert "Every factual claim supported by retrieved context" in llm.prompts[0]
+    assert "For comparison questions" in llm.prompts[0]
     assert "[paper-1:p3:c0]" in llm.prompts[0]
 
 
@@ -545,6 +560,76 @@ async def test_chat_workflow_retrieves_more_when_verifier_requests_more_evidence
     assert result.trace[-6]["status"] == "recovery"
     assert result.trace[-5]["tool_name"] == "web_search"
     assert result.trace[-1]["suggested_action"] == "finalize"
+
+
+@pytest.mark.asyncio
+async def test_chat_workflow_retrieves_more_when_model_answers_unknown_despite_evidence() -> None:
+    local_chunks = [
+        {
+            **RETRIEVED_CHUNK,
+            "id": "paper-1:p5:c0",
+            "text": "GRU and LSTM are recurrent neural network architectures.",
+            "metadata": {
+                **RETRIEVED_CHUNK["metadata"],
+                "title": "GRU vs LSTM",
+                "chunk_id": "paper-1:p5:c0",
+            },
+            "citation": {
+                **RETRIEVED_CHUNK["citation"],
+                "title": "GRU vs LSTM",
+                "chunk_id": "paper-1:p5:c0",
+                "text": "GRU and LSTM are recurrent neural network architectures.",
+            },
+        },
+        {
+            **SECOND_RETRIEVED_CHUNK,
+            "id": "paper-1:p6:c0",
+            "text": "LSTM has input, forget, and output gates, while GRU uses reset and update gates.",
+            "metadata": {
+                **SECOND_RETRIEVED_CHUNK["metadata"],
+                "title": "GRU vs LSTM",
+                "chunk_id": "paper-1:p6:c0",
+            },
+            "citation": {
+                **SECOND_RETRIEVED_CHUNK["citation"],
+                "title": "GRU vs LSTM",
+                "chunk_id": "paper-1:p6:c0",
+                "text": "LSTM has input, forget, and output gates, while GRU uses reset and update gates.",
+            },
+        },
+    ]
+    rag = FakeRAGService(local_chunks)
+    web = FakeWebSearchService(
+        [
+            {
+                "title": "GRU vs LSTM",
+                "url": "https://example.com/gru-lstm",
+                "content": "GRU is simpler with fewer gates; LSTM has separate memory cell gates.",
+            }
+        ]
+    )
+    llm = FakeLLMService(
+        [
+            UNKNOWN_ANSWER,
+            "GRU uses fewer gates than LSTM [web:1].",
+        ]
+    )
+    workflow = AgenticChatWorkflow(
+        rag,
+        llm,
+        web,
+        quality_evaluator=SufficientQualityEvaluator(),
+    )
+
+    result = await workflow.run(ChatWorkflowRequest("mô hình GRU khác gì so với LSTM"))
+
+    assert result.answer == "GRU uses fewer gates than LSTM [1]."
+    assert web.calls == [{"query": "mô hình GRU khác gì so với LSTM", "max_results": 5}]
+    assert result.trace[-7]["stage"] == "verify_answer"
+    assert result.trace[-7]["suggested_action"] == "retrieve_more"
+    assert result.trace[-7]["issue_count"] == 1
+    assert result.trace[-6]["stage"] == "plan"
+    assert result.trace[-6]["status"] == "recovery"
 
 
 @pytest.mark.asyncio

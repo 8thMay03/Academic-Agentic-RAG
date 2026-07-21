@@ -14,7 +14,7 @@ class AnswerVerifier:
 
     def verify(self, answer: str, citations: list[Citation]) -> VerificationResult:
         normalized_answer = " ".join(answer.split()).strip()
-        if not normalized_answer or normalized_answer == UNKNOWN_ANSWER:
+        if not normalized_answer:
             return VerificationResult(
                 passed=True,
                 answer=UNKNOWN_ANSWER,
@@ -32,6 +32,16 @@ class AnswerVerifier:
                 issues=["answer_has_no_evidence"],
                 unsupported_claims=[normalized_answer],
                 suggested_action="answer_unknown",
+            )
+
+        if normalized_answer == UNKNOWN_ANSWER:
+            return VerificationResult(
+                passed=False,
+                answer=UNKNOWN_ANSWER,
+                citations=[],
+                issues=["answer_unknown_despite_available_evidence"],
+                unsupported_claims=[normalized_answer],
+                suggested_action="retrieve_more",
             )
 
         grounded_answer = self._citation_grounder.ground_answer(normalized_answer, citations)

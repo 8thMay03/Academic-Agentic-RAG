@@ -59,6 +59,8 @@ class AnswerPromptBuilder:
             "If the context does not contain enough information to answer, respond exactly:\n"
             f"{UNKNOWN_ANSWER}\n\n"
             "Do not use outside knowledge. Do not guess. Keep the answer concise.\n"
+            "For comparison questions, if separate retrieved context describes each compared item, synthesize the "
+            "differences from those cited facts instead of requiring a single chunk that directly compares them.\n"
             "Every factual claim supported by retrieved context must end with one or more exact chunk_id citations "
             "in square brackets, e.g. [paper-1:p3:c0].\n"
             "Use only chunk_id values that appear in the retrieved context. Do not invent citation ids.\n\n"
