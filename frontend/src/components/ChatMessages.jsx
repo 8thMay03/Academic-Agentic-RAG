@@ -65,7 +65,7 @@ function ChatMessage({ message, onOpenCitation }) {
           {!content && message.streaming ? <span className="typing-dots">Đang suy nghĩ</span> : null}
           {message.streaming && content ? <span className="typing-cursor" aria-hidden="true" /> : null}
         </div>
-        {!isUser && message.trace?.length ? <AgentActivity trace={message.trace} /> : null}
+        {!isUser && message.trace?.length ? <AgentActivity trace={message.trace} active={Boolean(message.streaming)} /> : null}
         <CitationList citations={message.citations} onOpenCitation={onOpenCitation} />
       </div>
     </article>

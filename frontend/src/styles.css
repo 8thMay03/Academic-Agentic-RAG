@@ -912,14 +912,97 @@ code {
 
 .agent-activity {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin-top: 12px;
-  padding: 10px;
+  padding: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #f7f8fa;
+  background: linear-gradient(180deg, #f8faf8, #f6f7f9);
   color: var(--text-muted);
   font-size: 0.8rem;
+}
+
+.agent-activity-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.agent-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--sage);
+  box-shadow: 0 0 0 0 rgba(90, 125, 98, 0.35);
+  animation: livePulse 1.6s ease-out infinite;
+}
+
+@keyframes livePulse {
+  70% {
+    box-shadow: 0 0 0 8px rgba(90, 125, 98, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(90, 125, 98, 0);
+  }
+}
+
+.agent-todo-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.agent-todo-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.agent-todo-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-todo-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+}
+
+.agent-todo-done {
+  color: #6f7688;
+  text-decoration: line-through;
+}
+
+.agent-todo-done svg {
+  color: #607d67;
+}
+
+.agent-todo-active {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.agent-todo-active svg {
+  color: var(--copper);
+  animation: spin 1s linear infinite;
+}
+
+.agent-timeline {
+  display: grid;
+  gap: 8px;
 }
 
 .agent-step {
