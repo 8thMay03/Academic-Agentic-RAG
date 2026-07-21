@@ -451,6 +451,8 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert "Write a useful, substantive answer when the context is rich" in llm.prompts[0]
     assert "Avoid one-sentence answers" in llm.prompts[0]
     assert "compact markdown table for comparison questions" in llm.prompts[0]
+    assert "Put important formulas" in llm.prompts[0]
+    assert "display math using $$...$$" in llm.prompts[0]
     assert "Keep the answer concise" not in llm.prompts[0]
     assert "For comparison questions" in llm.prompts[0]
     assert "[paper-1:p3:c0]" in llm.prompts[0]
