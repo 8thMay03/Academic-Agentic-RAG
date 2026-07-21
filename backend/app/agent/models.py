@@ -73,6 +73,14 @@ class ResearchPlan:
 
 
 @dataclass(frozen=True)
+class QueryPlan:
+    original_query: str
+    query_type: Literal["simple_lookup", "comparison", "multi_aspect", "paper_review"]
+    search_queries: list[str]
+    reason: str
+
+
+@dataclass(frozen=True)
 class AgentLimits:
     max_steps: int = 6
     max_web_searches: int = 2
@@ -239,6 +247,9 @@ class AgentTraceEvent(TypedDict):
     suggested_action: NotRequired[str]
     answer_chars: NotRequired[int]
     tool_result: NotRequired[dict[str, Any]]
+    query_type: NotRequired[str]
+    query_count: NotRequired[int]
+    queries: NotRequired[list[str]]
 
 
 def trace_event(stage: str, **fields: Any) -> AgentTraceEvent:

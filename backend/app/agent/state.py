@@ -5,6 +5,7 @@ from app.agent.models import (
     AgentTraceEvent,
     ChatWorkflowRequest,
     ContextQuality,
+    QueryPlan,
     ResearchPlan,
     ToolCall,
     ToolResult,
@@ -21,6 +22,7 @@ class AgenticRAGState(TypedDict, total=False):
     web_chunks: list[RetrievedChunk]
     evidence: list[RetrievedChunk]
     quality: ContextQuality
+    query_plan: QueryPlan
     citations: list[Citation]
     answer: str
     verification: VerificationResult

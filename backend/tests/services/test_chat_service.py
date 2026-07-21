@@ -166,6 +166,11 @@ class StaticTool:
         return self._result
 
 
+def _trace_event(trace: list[dict], stage: str, occurrence: int = 0) -> dict:
+    events = [event for event in trace if event["stage"] == stage]
+    return events[occurrence]
+
+
 @pytest.mark.asyncio
 async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> None:
     rag = FakeRAGService([])
@@ -183,6 +188,9 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
     assert web.calls == [{"query": "What is the method?", "max_results": 3}]
     assert [event["stage"] for event in result.trace] == [
         "classify_intent",
+        "query_planning",
+        "query_decomposition",
+        "retrieval_planning",
         "local_retrieve",
         "quality_gate",
         "plan",
@@ -193,10 +201,10 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
         "draft_answer",
     ]
     assert result.trace[0]["intent"] == "research_qa"
-    assert result.trace[2]["sufficient"] is False
-    assert result.trace[3]["step_count"] == 2
-    assert result.trace[4]["tool_name"] == "web_search"
-    assert result.trace[6]["tool_name"] == "web_snippet_ingest"
+    assert _trace_event(result.trace, "quality_gate")["sufficient"] is False
+    assert _trace_event(result.trace, "plan")["step_count"] == 2
+    assert _trace_event(result.trace, "execute_tool", 0)["tool_name"] == "web_search"
+    assert _trace_event(result.trace, "execute_tool", 1)["tool_name"] == "web_snippet_ingest"
     assert rag.calls == [
         {
             "question": "What is the method?",
@@ -235,9 +243,10 @@ async def test_chat_service_falls_back_to_web_when_local_context_is_missing() ->
     assert result.citations[0].url == "https://example.com/agentic-rag-crag"
     assert result.citations[0].retrieval_sources == ["web"]
     assert result.citations[0].evidence_quality == "web"
-    assert result.trace[2]["reason"] == "no_local_context"
-    assert result.trace[4]["tool_name"] == "web_search"
-    assert result.trace[5]["chunk_count"] == 1
+    assert _trace_event(result.trace, "query_planning")["query_type"] == "comparison"
+    assert _trace_event(result.trace, "quality_gate")["reason"] == "no_local_context"
+    assert _trace_event(result.trace, "execute_tool", 0)["tool_name"] == "web_search"
+    assert _trace_event(result.trace, "observe", 0)["chunk_count"] == 1
     assert "Agentic RAG uses agent planning" in llm.prompts[0]
 
 
@@ -331,8 +340,8 @@ async def test_chat_workflow_ingests_fresh_research_for_latest_questions() -> No
         "local_retrieve",
     ]
     assert result.trace[0]["intent"] == "fresh_research"
-    assert result.trace[2]["reason"] == "latest_query_requires_web"
-    assert result.trace[2]["sufficient"] is False
+    assert _trace_event(result.trace, "quality_gate")["reason"] == "latest_query_requires_web"
+    assert _trace_event(result.trace, "quality_gate")["sufficient"] is False
     assert result.citations[0].chunk_id == "fresh-paper:p2:c0"
     assert result.citations[0].url == "https://arxiv.org/abs/2601.12345"
     assert result.citations[0].source_type == "arxiv"
@@ -357,8 +366,8 @@ async def test_chat_workflow_rejects_low_score_context_before_self_check() -> No
     result = await workflow.run(ChatWorkflowRequest("How does planning retrieve evidence?"))
 
     assert result.answer == UNKNOWN_ANSWER
-    assert result.trace[2]["reason"] == "low_top_score"
-    assert result.trace[2]["self_check_used"] is False
+    assert _trace_event(result.trace, "quality_gate")["reason"] == "low_top_score"
+    assert _trace_event(result.trace, "quality_gate")["self_check_used"] is False
     assert web.calls == [{"query": "How does planning retrieve evidence?", "max_results": 5}]
     assert llm.prompts == []
 
@@ -378,9 +387,9 @@ async def test_chat_workflow_uses_llm_self_check_for_borderline_context() -> Non
     result = await workflow.run(ChatWorkflowRequest("How does planning retrieve evidence?"))
 
     assert result.answer == "It uses planning [1]."
-    assert result.trace[2]["reason"] == "llm_self_check_passed"
-    assert result.trace[2]["self_check_used"] is True
-    assert result.trace[2]["self_check_passed"] is True
+    assert _trace_event(result.trace, "quality_gate")["reason"] == "llm_self_check_passed"
+    assert _trace_event(result.trace, "quality_gate")["self_check_used"] is True
+    assert _trace_event(result.trace, "quality_gate")["self_check_passed"] is True
     assert web.calls == []
     assert "Return only YES or NO" in llm.prompts[0]
 
@@ -408,10 +417,10 @@ async def test_chat_workflow_searches_web_when_llm_self_check_rejects_context() 
     result = await workflow.run(ChatWorkflowRequest("How does planning retrieve evidence?"))
 
     assert result.answer == "Planning uses explicit evidence selection [1]."
-    assert result.trace[2]["reason"] == "llm_self_check_failed"
-    assert result.trace[2]["self_check_passed"] is False
-    assert result.trace[3]["reason"] == "llm_self_check_failed"
-    assert result.trace[4]["tool_name"] == "web_search"
+    assert _trace_event(result.trace, "quality_gate")["reason"] == "llm_self_check_failed"
+    assert _trace_event(result.trace, "quality_gate")["self_check_passed"] is False
+    assert _trace_event(result.trace, "plan")["reason"] == "llm_self_check_failed"
+    assert _trace_event(result.trace, "execute_tool", 0)["tool_name"] == "web_search"
     assert web.calls == [{"query": "How does planning retrieve evidence?", "max_results": 5}]
 
 
@@ -426,7 +435,7 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
 
     assert result.answer == "It uses planning for retrieval decisions (p. 3). [1]"
     assert web.calls == []
-    assert result.trace[2]["sufficient"] is True
+    assert _trace_event(result.trace, "quality_gate")["sufficient"] is True
     citations = result.citations
     assert citations[0].paper_id == "paper-1"
     assert citations[0].page_number == 3
@@ -442,6 +451,8 @@ async def test_chat_service_answers_with_citations_from_context() -> None:
     assert "Write a useful, substantive answer when the context is rich" in llm.prompts[0]
     assert "Avoid one-sentence answers" in llm.prompts[0]
     assert "compact markdown table for comparison questions" in llm.prompts[0]
+    assert "Put important formulas" in llm.prompts[0]
+    assert "display math using $$...$$" in llm.prompts[0]
     assert "Keep the answer concise" not in llm.prompts[0]
     assert "For comparison questions" in llm.prompts[0]
     assert "[paper-1:p3:c0]" in llm.prompts[0]
@@ -487,7 +498,7 @@ async def test_chat_service_streams_answer_tokens_with_citations() -> None:
     assert tokens == ["It ", "uses ", "planning ", "[1]"]
     assert citations[0].paper_id == "paper-1"
     assert trace[0]["stage"] == "classify_intent"
-    assert trace[1]["stage"] == "local_retrieve"
+    assert _trace_event(trace, "local_retrieve")["stage"] == "local_retrieve"
     assert trace[-1]["stage"] == "verify_answer"
     assert trace[-1]["suggested_action"] == "revise_answer"
     assert trace[-1]["unsupported_claim_count"] == 0

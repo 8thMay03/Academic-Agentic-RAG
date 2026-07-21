@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 from app.agent.models import AgentLimits, ToolCall, ToolResult, append_trace
+from app.agent.nodes.observer_node import compact_tool_result
 from app.agent.state import AgenticRAGState
 from app.agent.tools.execution import prepare_tool_input, run_tool_with_timeout, tool_limit_error
 
@@ -92,6 +93,7 @@ def _with_tool_result(
         step_index=current_step_index,
         success=result.success,
         reason=reason if result.success else result.error or reason,
+        tool_result=compact_tool_result(result),
     )
     return {
         **state,

@@ -54,7 +54,8 @@ class AnswerPromptBuilder:
             else ""
         )
         return (
-            "Answer in the same language as the user's question. If the question is Vietnamese, answer in natural Vietnamese while preserving standard technical terms and LaTeX formulas."
+            "Answer in the same language as the user's question. If the question is Vietnamese, answer in natural Vietnamese "
+            "while preserving standard technical terms and LaTeX formulas.\n"
             "Answer the question using only the retrieved local paper and web context below.\n"
             "Use the recent conversation only to resolve pronouns, ellipses, and follow-up references.\n"
             "If the context does not contain enough information to answer, respond exactly:\n"
@@ -65,8 +66,9 @@ class AnswerPromptBuilder:
             "answers unless the question is trivial or the context is very sparse.\n"
             "Prefer clear structure over brevity: use short paragraphs or bullets; use a compact markdown table for "
             "comparison questions when it helps the answer scan well.\n"
-            "When writing mathematical formulas, use LaTeX math delimiters: inline formulas as $...$ and display "
-            "formulas as $$...$$ on their own lines.\n"
+            "When writing mathematical formulas, use LaTeX math delimiters. Use inline $...$ only for short symbols "
+            "or tiny expressions. Put important formulas, fractions, objectives, update rules, loss functions, and "
+            "attention/logistic/sigmoid equations in display math using $$...$$ on their own lines.\n"
             "For comparison questions, if separate retrieved context describes each compared item, synthesize the "
             "differences from those cited facts instead of requiring a single chunk that directly compares them.\n"
             "Every factual claim supported by retrieved context must end with one or more exact chunk_id citations "
