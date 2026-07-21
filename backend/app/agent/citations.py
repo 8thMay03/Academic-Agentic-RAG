@@ -12,7 +12,7 @@ from app.models.citation import Citation
 from app.vectorstore.bm25 import tokenize
 
 
-CITATION_PATTERN = re.compile(r"\[([^\[\]]+)\]")
+CITATION_PATTERN = re.compile(r"(?<!\\)\[([^\[\]]+)\]")
 UNKNOWN_ANSWER = "I don't know"
 
 

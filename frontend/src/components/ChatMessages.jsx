@@ -1,10 +1,15 @@
 import { Bot, User } from "lucide-react";
 import { useEffect, useRef } from "react";
+import rehypeKatex from "rehype-katex";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 
 import AgentActivity from "./AgentActivity.jsx";
 import CitationList from "./CitationList.jsx";
+
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm, remarkMath];
+const MARKDOWN_REHYPE_PLUGINS = [rehypeKatex];
 
 export default function ChatMessages({ activeChat, canChat, chatState, onOpenCitation, sourceState }) {
   const logRef = useRef(null);
@@ -75,7 +80,7 @@ function MessageContent({ content, isUser }) {
     }
 
     return (
-      <ReactMarkdown key={`markdown-${index}`} remarkPlugins={[remarkGfm]}>
+      <ReactMarkdown key={`markdown-${index}`} remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>
         {segment.content}
       </ReactMarkdown>
     );
@@ -91,6 +96,7 @@ function normalizeAssistantMarkdown(content) {
   text = text.replace(/\s+(\d+\.\s+(?=[A-ZÀ-Ỹ0-9]))/g, "\n$1");
   text = text.replace(/\s*(\|[^|\n]+(?:\|[^|\n]+)+\|)\s*/g, "\n$1\n");
   text = repairBrokenTableLines(text);
+  text = normalizeMathDelimiters(text);
   text = text.replace(/\n{3,}/g, "\n\n");
   return text.trim();
 }
@@ -187,6 +193,12 @@ function cleanTableCell(cell) {
   return cell.replace(/\s*\|\s*$/g, "").trim();
 }
 
+function normalizeMathDelimiters(content) {
+  return content
+    .replace(/\\\[((?:.|\n)*?)\\\]/g, (_, formula) => `\n\n$$\n${formula.trim()}\n$$\n\n`)
+    .replace(/\\\(((?:.|\n)*?)\\\)/g, (_, formula) => `$${formula.trim()}$`);
+}
+
 function buildAssistantSegments(content) {
   const text = normalizeAssistantMarkdown(content);
   const lines = text.split("\n");
@@ -254,7 +266,9 @@ function AssistantTable({ headers, rows }) {
       <thead>
         <tr>
           {headers.map((header) => (
-            <th key={header}>{header}</th>
+            <th key={header}>
+              <MarkdownCell content={header} />
+            </th>
           ))}
         </tr>
       </thead>
@@ -262,11 +276,21 @@ function AssistantTable({ headers, rows }) {
         {rows.map((row, rowIndex) => (
           <tr key={`${row[0]}-${rowIndex}`}>
             {headers.map((header, cellIndex) => (
-              <td key={`${header}-${cellIndex}`}>{row[cellIndex] ?? ""}</td>
+              <td key={`${header}-${cellIndex}`}>
+                <MarkdownCell content={row[cellIndex] ?? ""} />
+              </td>
             ))}
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+function MarkdownCell({ content }) {
+  return (
+    <ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>
+      {normalizeMathDelimiters(content)}
+    </ReactMarkdown>
   );
 }

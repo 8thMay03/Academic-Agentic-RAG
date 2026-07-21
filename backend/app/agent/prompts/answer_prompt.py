@@ -64,6 +64,8 @@ class AnswerPromptBuilder:
             "answers unless the question is trivial or the context is very sparse.\n"
             "Prefer clear structure over brevity: use short paragraphs or bullets; use a compact markdown table for "
             "comparison questions when it helps the answer scan well.\n"
+            "When writing mathematical formulas, use LaTeX math delimiters: inline formulas as $...$ and display "
+            "formulas as $$...$$ on their own lines.\n"
             "For comparison questions, if separate retrieved context describes each compared item, synthesize the "
             "differences from those cited facts instead of requiring a single chunk that directly compares them.\n"
             "Every factual claim supported by retrieved context must end with one or more exact chunk_id citations "
