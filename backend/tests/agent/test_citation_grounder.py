@@ -83,3 +83,26 @@ def test_citation_grounder_preserves_markdown_blocks_when_numbering_citations() 
     assert "\n- Trains many decision trees [1]." in display_answer
     assert "\n| Step | Description |\n" in display_answer
     assert "| 1 | Bootstrap samples |" in display_answer
+
+
+def test_citation_grounder_does_not_strip_latex_display_math() -> None:
+    citations = [
+        Citation(
+            paper_id="paper-1",
+            title="Attention",
+            chunk_id="paper-1:p1:c0",
+        ),
+    ]
+    answer = (
+        "Scaled dot-product attention is computed as:\n\n"
+        "\\[\n"
+        "\\operatorname{Attention}(Q,K,V)=\\operatorname{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V\n"
+        "\\]\n\n"
+        "This normalizes query-key scores [paper-1:p1:c0]."
+    )
+
+    display_answer = CitationGrounder().display_answer_with_numbered_citations(answer, citations)
+
+    assert "\\operatorname{Attention}(Q,K,V)" in display_answer
+    assert "\\frac{QK^T}{\\sqrt{d_k}}" in display_answer
+    assert "This normalizes query-key scores [1]." in display_answer

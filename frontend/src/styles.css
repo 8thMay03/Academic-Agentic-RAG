@@ -843,6 +843,12 @@ code {
   font-weight: 700;
 }
 
+.chat-message.assistant .message-text th p,
+.chat-message.assistant .message-text td p {
+  margin: 0;
+  font-size: inherit;
+}
+
 .chat-message.assistant .message-text tr:last-child td {
   border-bottom: 0;
 }
@@ -852,6 +858,18 @@ code {
   border-radius: 5px;
   background: var(--parchment-deep);
   font-size: 0.9em;
+}
+
+.chat-message.assistant .message-text .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 12px 0;
+  padding: 6px 0;
+}
+
+.chat-message.assistant .message-text .katex {
+  font-size: 1.02em;
 }
 
 .typing-dots::after {
