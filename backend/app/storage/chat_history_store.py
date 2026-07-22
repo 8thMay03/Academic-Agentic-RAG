@@ -3,6 +3,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.api.security import current_tenant_id
 from app.config.settings import settings
 from app.models.chat import ChatHistoryMessage, ChatSession, ChatSource, ChatThread, agent_trace_payload
 from app.models.citation import Citation
@@ -11,7 +12,11 @@ from app.utils.file import safe_filename
 
 class ChatHistoryStore:
     def __init__(self, base_dir: str | Path | None = None) -> None:
-        self._base_dir = Path(base_dir or settings.DATA_DIR) / "chat_history"
+        root_dir = Path(base_dir or settings.DATA_DIR)
+        tenant_id = current_tenant_id()
+        if base_dir is None and tenant_id:
+            root_dir = root_dir / "tenants" / safe_filename(tenant_id)
+        self._base_dir = root_dir / "chat_history"
 
     async def get_messages(self, paper_id: str) -> list[ChatHistoryMessage]:
         path = self._history_path(paper_id)
@@ -114,6 +119,7 @@ class ChatHistoryStore:
         answer: str,
         citations: list[Citation],
         trace: list[dict] | None = None,
+        stop_reason: str | None = None,
     ) -> list[ChatHistoryMessage]:
         session = await self.get_session(paper_id)
         if session is None:
@@ -130,6 +136,7 @@ class ChatHistoryStore:
                     content=answer,
                     citations=citations,
                     trace=agent_trace_payload(trace or []),
+                    stop_reason=stop_reason,
                     created_at=created_at,
                 ),
             ]

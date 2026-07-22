@@ -4,15 +4,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.api.security import current_tenant_id
 from app.config.settings import settings
-from app.models.chat import AgentRunRecord, ResearchFinding, agent_trace_payload
+from app.models.chat import AgentRunRecord, AgentRunUsageSummary, ResearchFinding, agent_trace_payload
 from app.models.citation import Citation
 from app.utils.file import safe_filename
 
 
 class AgentRunStore:
     def __init__(self, base_dir: str | Path | None = None) -> None:
-        self._base_dir = Path(base_dir or settings.DATA_DIR) / "agent_runs"
+        root_dir = Path(base_dir or settings.DATA_DIR)
+        tenant_id = current_tenant_id()
+        if base_dir is None and tenant_id:
+            root_dir = root_dir / "tenants" / safe_filename(tenant_id)
+        self._base_dir = root_dir / "agent_runs"
 
     async def append_run(
         self,
@@ -21,6 +26,7 @@ class AgentRunStore:
         answer: str,
         citations: list[Citation | dict[str, Any]],
         trace: list[dict],
+        stop_reason: str | None = None,
     ) -> AgentRunRecord:
         run_id = uuid.uuid4().hex
         created_at = self._timestamp()
@@ -45,6 +51,8 @@ class AgentRunStore:
             answer=answer,
             citations=normalized_citations,
             trace=normalized_trace,
+            stop_reason=stop_reason,
+            usage=self._usage_summary(normalized_trace),
             findings=findings,
             created_at=created_at,
         )
@@ -144,3 +152,27 @@ class AgentRunStore:
         if qualities:
             return "medium"
         return "unknown"
+
+    @staticmethod
+    def _usage_summary(trace: list[dict]) -> AgentRunUsageSummary:
+        models = []
+        seen_models = set()
+        for event in trace:
+            for model in (event.get("model"), event.get("embedding_model")):
+                if model and model not in seen_models:
+                    seen_models.add(model)
+                    models.append(str(model))
+        return AgentRunUsageSummary(
+            latency_ms=sum(float(event.get("latency_ms") or 0.0) for event in trace),
+            input_tokens=sum(int(event.get("input_tokens") or 0) for event in trace),
+            output_tokens=sum(int(event.get("output_tokens") or 0) for event in trace),
+            total_tokens=sum(int(event.get("total_tokens") or 0) for event in trace),
+            embedding_tokens=sum(int(event.get("embedding_tokens") or 0) for event in trace),
+            estimated_cost_usd=sum(
+                float(event.get("estimated_cost_usd") or 0.0)
+                + float(event.get("embedding_estimated_cost_usd") or 0.0)
+                for event in trace
+            ),
+            tool_call_count=sum(1 for event in trace if event.get("stage") == "execute_tool"),
+            models=models,
+        )

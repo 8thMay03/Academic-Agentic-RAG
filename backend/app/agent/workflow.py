@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 import re
 
 from app.agent.citations import CitationGrounder
-from app.agent.evaluators.answer_verifier import AnswerVerifier
+from app.agent.evaluators.answer_verifier import AnswerVerifier, LLMClaimSupportJudge
 from app.agent.evaluators.context_quality import ContextQualityEvaluator
 from app.agent.models import (
     AgentTraceEvent,
@@ -18,6 +18,7 @@ from app.agent.tools.pdf_index_tool import PDFIndexTool
 from app.agent.tools.registry import ToolRegistry
 from app.agent.tools.web_search_tool import WebSearchTool
 from app.agent.tools.web_snippet_ingest_tool import WebSnippetIngestTool
+from app.config.settings import settings
 from app.models.citation import Citation
 from app.services.llm_service import LLMService
 from app.services.pdf_index_service import PDFIndexService
@@ -48,7 +49,7 @@ class AgenticChatWorkflow:
         resolved_web_search_service = web_search_service or WebSearchService()
         self._citation_grounder = citation_grounder or CitationGrounder()
         self._quality_evaluator = quality_evaluator or ContextQualityEvaluator(llm_service)
-        self._answer_verifier = answer_verifier or AnswerVerifier(self._citation_grounder)
+        self._answer_verifier = answer_verifier or self._build_answer_verifier(llm_service)
         self._prompt_builder = prompt_builder or AnswerPromptBuilder()
         self._tool_registry = tool_registry or ToolRegistry(
             [
@@ -77,6 +78,14 @@ class AgenticChatWorkflow:
             "tool_registry": self._tool_registry,
             "trace": [],
         }
+
+    def _build_answer_verifier(self, llm_service: LLMService) -> AnswerVerifier:
+        if not settings.ENABLE_LLM_VERIFIER:
+            return AnswerVerifier(self._citation_grounder)
+        return AnswerVerifier(
+            self._citation_grounder,
+            async_claim_judge=LLMClaimSupportJudge(llm_service),
+        )
 
     async def stream(self, request: ChatWorkflowRequest) -> tuple[AsyncIterator[str], list[Citation], list[AgentTraceEvent]]:
         result = await self.run(request)

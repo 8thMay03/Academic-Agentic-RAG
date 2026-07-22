@@ -11,13 +11,14 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  StopCircle,
   LoaderCircle,
   Wrench,
 } from "lucide-react";
 
-import { agentTraceDisplay } from "../utils/format.js";
+import { agentTraceDisplay, formatAgentStopReason } from "../utils/format.js";
 
-export default function AgentActivity({ trace, active = false }) {
+export default function AgentActivity({ trace, active = false, stopReason = null }) {
   const phases = buildPhases(trace, active);
   const headline = activityHeadline(trace, active);
   const isLive = active && trace.at(-1)?.stage !== "verify_answer";
@@ -28,6 +29,12 @@ export default function AgentActivity({ trace, active = false }) {
         <span className="agent-live-dot" aria-hidden="true" />
         <span>{headline}</span>
       </div>
+      {stopReason ? (
+        <div className="agent-run-outcome">
+          <StopCircle size={14} aria-hidden="true" />
+          <span>{formatAgentStopReason(stopReason)}</span>
+        </div>
+      ) : null}
 
       <div className="agent-todo-card">
         <div className="agent-todo-title">
@@ -49,44 +56,44 @@ export default function AgentActivity({ trace, active = false }) {
 
       <div className="agent-timeline">
         {trace.map((step, index) => {
-        const display = agentTraceDisplay(step);
-        const Icon = iconForStep(step);
-        const eventText = eventSummary(step, display);
+          const display = agentTraceDisplay(step);
+          const Icon = iconForStep(step);
+          const eventText = eventSummary(step, display);
 
-        return (
-          <div className={`agent-step agent-step-${display.tone}`} key={`${step.stage}-${index}`}>
-            <span className="agent-step-icon" aria-hidden="true">
-              <Icon size={14} />
-            </span>
-            <div className="agent-step-copy">
-              <span className="agent-step-stage">{eventText}</span>
-              {display.detail ? <span className="agent-step-detail">{display.detail}</span> : null}
-              {step.queries?.length ? (
-                <details className="agent-tool-result">
-                  <summary>Queries</summary>
-                  <ol className="agent-query-list">
-                    {step.queries.map((query, queryIndex) => (
-                      <li key={`${query}-${queryIndex}`}>{query}</li>
-                    ))}
-                  </ol>
-                </details>
-              ) : null}
-              {step.tool_result ? (
-                <details className="agent-tool-result">
-                  <summary>Tool result</summary>
-                  <pre>{formatToolResult(step.tool_result)}</pre>
-                </details>
-              ) : null}
-              {hasStepData(step) ? (
-                <details className="agent-tool-result">
-                  <summary>Step data</summary>
-                  <pre>{formatStepData(step)}</pre>
-                </details>
-              ) : null}
+          return (
+            <div className={`agent-step agent-step-${display.tone}`} key={`${step.stage}-${index}`}>
+              <span className="agent-step-icon" aria-hidden="true">
+                <Icon size={14} />
+              </span>
+              <div className="agent-step-copy">
+                <span className="agent-step-stage">{eventText}</span>
+                {display.detail ? <span className="agent-step-detail">{display.detail}</span> : null}
+                {step.queries?.length ? (
+                  <details className="agent-tool-result">
+                    <summary>Queries</summary>
+                    <ol className="agent-query-list">
+                      {step.queries.map((query, queryIndex) => (
+                        <li key={`${query}-${queryIndex}`}>{query}</li>
+                      ))}
+                    </ol>
+                  </details>
+                ) : null}
+                {step.tool_result ? (
+                  <details className="agent-tool-result">
+                    <summary>Tool result</summary>
+                    <pre>{formatToolResult(step.tool_result)}</pre>
+                  </details>
+                ) : null}
+                {hasStepData(step) ? (
+                  <details className="agent-tool-result">
+                    <summary>Step data</summary>
+                    <pre>{formatStepData(step)}</pre>
+                  </details>
+                ) : null}
+              </div>
+              {display.badge ? <span className="agent-step-badge">{display.badge}</span> : null}
             </div>
-            {display.badge ? <span className="agent-step-badge">{display.badge}</span> : null}
-          </div>
-        );
+          );
         })}
       </div>
     </div>

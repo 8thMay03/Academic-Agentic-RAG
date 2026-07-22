@@ -197,6 +197,35 @@ def test_upload_local_pdfs_rejects_non_pdf(monkeypatch, tmp_path) -> None:
     assert not (tmp_path / "pdfs" / "notes.txt").exists()
 
 
+def test_upload_local_pdfs_rejects_pdf_with_invalid_header(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/papers/pdfs/upload",
+        files=[("files", ("fake.pdf", b"not a pdf", "application/pdf"))],
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Uploaded file is not a valid PDF: fake.pdf"
+    assert not (tmp_path / "pdfs" / "fake.pdf").exists()
+
+
+def test_upload_local_pdfs_rejects_oversized_pdf(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings_module.settings, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(settings_module.settings, "MAX_PDF_UPLOAD_BYTES", 7)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/papers/pdfs/upload",
+        files=[("files", ("large.pdf", b"%PDF too large", "application/pdf"))],
+    )
+
+    assert response.status_code == 413
+    assert "PDF exceeds upload limit" in response.json()["detail"]
+    assert not (tmp_path / "pdfs" / "large.pdf").exists()
+
+
 def test_get_downloaded_pdf_content_returns_inline_pdf(monkeypatch, tmp_path) -> None:
     pdf_dir = tmp_path / "pdfs"
     pdf_dir.mkdir()

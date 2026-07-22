@@ -1,6 +1,7 @@
 import pytest
 
 from app.models.chat import ChatHistoryMessage
+from app.services.embedding_service import EmbeddingUsage
 from app.services.rag_service import RAGService
 
 
@@ -12,6 +13,7 @@ class FakeRetrieverService:
         self.score_threshold = None
         self.paper_ids = None
         self.calls = []
+        self.last_embedding_usage = None
 
     async def retrieve(
         self,
@@ -33,6 +35,12 @@ class FakeRetrieverService:
                 "paper_ids": paper_ids,
                 "chat_id": chat_id,
             }
+        )
+        self.last_embedding_usage = EmbeddingUsage(
+            model="text-embedding-test",
+            input_count=1,
+            total_tokens=5,
+            estimated_cost_usd=0.0001,
         )
         return self.chunks
 
@@ -151,6 +159,10 @@ async def test_rag_service_retries_without_threshold_when_context_is_missing() -
             "chat_id": None,
         },
     ]
+    assert service.last_embedding_usage is not None
+    assert service.last_embedding_usage.input_count == 2
+    assert service.last_embedding_usage.total_tokens == 10
+    assert service.last_embedding_usage.estimated_cost_usd == pytest.approx(0.0002)
 
 
 @pytest.mark.asyncio

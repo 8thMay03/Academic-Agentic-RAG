@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_agent_run_store, get_chat_history_store, get_chat_service
@@ -216,7 +218,7 @@ class FakeChatHistoryStore:
             updated_at="2026-01-01T00:00:00+00:00",
         )
 
-    async def append_exchange(self, paper_id, question, answer, citations, trace=None):
+    async def append_exchange(self, paper_id, question, answer, citations, trace=None, stop_reason=None):
         self.appended = {
             "paper_id": paper_id,
             "question": question,
@@ -277,7 +279,7 @@ class FakeAgentRunStore:
     def __init__(self) -> None:
         self.runs = []
 
-    async def append_run(self, chat_id, question, answer, citations, trace):
+    async def append_run(self, chat_id, question, answer, citations, trace, stop_reason=None):
         self.runs.append(
             {
                 "chat_id": chat_id,
@@ -300,6 +302,12 @@ class FakeAgentRunStore:
         for run in await self.list_runs(chat_id):
             findings.extend(run.findings if hasattr(run, "findings") else run.get("findings", []))
         return findings
+
+
+class FailingStreamChatService:
+    async def stream_events(self, **kwargs):
+        raise RuntimeError("provider connection dropped")
+        yield
 
 
 def test_chat_with_papers_returns_answer_and_citations() -> None:
@@ -439,6 +447,17 @@ def test_agent_trace_event_response_filters_unknown_fields() -> None:
             "success": True,
             "chunks": [{"id": "web:1", "text": "Retrieved evidence."}],
         },
+        supported_claim_count=1,
+        contradicted_claim_count=0,
+        insufficient_claim_count=0,
+        claim_citation_map=[
+            {
+                "claim": "Agentic RAG uses planning [paper-1:p3:c0].",
+                "status": "supported",
+                "supporting_chunk_ids": ["paper-1:p3:c0"],
+                "reason": "claim_terms_overlap_cited_evidence",
+            }
+        ],
         unknown="ignored",
     )
 
@@ -459,6 +478,17 @@ def test_agent_trace_event_response_filters_unknown_fields() -> None:
             "success": True,
             "chunks": [{"id": "web:1", "text": "Retrieved evidence."}],
         },
+        "supported_claim_count": 1,
+        "contradicted_claim_count": 0,
+        "insufficient_claim_count": 0,
+        "claim_citation_map": [
+            {
+                "claim": "Agentic RAG uses planning [paper-1:p3:c0].",
+                "status": "supported",
+                "supporting_chunk_ids": ["paper-1:p3:c0"],
+                "reason": "claim_terms_overlap_cited_evidence",
+            }
+        ],
     }
 
 
@@ -474,13 +504,14 @@ def test_get_chat_history_returns_messages() -> None:
     assert response.json() == {
         "paper_id": "paper-1",
         "messages": [
-                {
-                    "role": "user",
-                    "content": "Previous question?",
-                    "citations": [],
-                    "trace": [],
-                    "created_at": "2026-01-01T00:00:00+00:00",
-                }
+                    {
+                        "role": "user",
+                        "content": "Previous question?",
+                        "citations": [],
+                        "trace": [],
+                        "stop_reason": None,
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                    }
         ],
     }
 
@@ -530,6 +561,16 @@ def test_list_agent_runs_returns_persisted_runs() -> None:
                 "answer": "It uses planning.",
                 "citations": [],
                 "trace": FAKE_TRACE,
+                "usage": {
+                    "latency_ms": 0.0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "embedding_tokens": 0,
+                    "estimated_cost_usd": 0.0,
+                    "tool_call_count": 0,
+                    "models": [],
+                },
                 "findings": [
                     {
                         "finding_id": "run-1:f0",
@@ -657,6 +698,43 @@ def test_stream_chat_with_papers_returns_token_events_and_persists_history() -> 
     assert history_store.appended["trace"] == FAKE_TRACE
     assert agent_run_store.runs[0]["answer"] == "It uses planning."
     assert agent_run_store.runs[0]["trace"] == FAKE_TRACE
+
+
+def test_stream_chat_includes_request_id_and_structured_error() -> None:
+    app.dependency_overrides[get_chat_service] = lambda: FailingStreamChatService()
+    app.dependency_overrides[get_chat_history_store] = lambda: FakeChatHistoryStore()
+    app.dependency_overrides[get_agent_run_store] = lambda: FakeAgentRunStore()
+    client = TestClient(app)
+
+    with client.stream(
+        "POST",
+        "/api/v1/chat/stream",
+        headers={
+            "X-Request-ID": "req-test-123",
+            "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        },
+        json={"question": "What is the method?"},
+    ) as response:
+        events = [json.loads(line) for line in response.iter_lines()]
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "req-test-123"
+    assert response.headers["traceparent"] == "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+    assert response.headers["X-Trace-ID"] == "4bf92f3577b34da6a3ce929d0e0e4736"
+    assert response.headers["X-Span-ID"] == "00f067aa0ba902b7"
+    assert events == [
+        {
+            "type": "error",
+            "error_code": "chat_stream_failed",
+            "message": "Streaming chat failed.",
+            "detail": "provider connection dropped",
+            "request_id": "req-test-123",
+            "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+            "span_id": "00f067aa0ba902b7",
+        }
+    ]
 
 
 def test_list_chat_history_returns_threads() -> None:

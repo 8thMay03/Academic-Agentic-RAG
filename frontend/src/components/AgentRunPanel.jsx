@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 
-import { formatDateTime } from "../utils/format.js";
+import { formatDateTime, formatRunUsageSummary } from "../utils/format.js";
 import AgentActivity from "./AgentActivity.jsx";
 
 export default function AgentRunPanel({ activeTab, findings, onClose, onSelectTab, runs, runState }) {
@@ -73,22 +73,36 @@ export default function AgentRunPanel({ activeTab, findings, onClose, onSelectTa
         {!runState.loading && activeTab === "runs" && hasRuns ? (
           <ol className="agent-run-list">
             {[...runs].reverse().map((run) => (
-              <li className="agent-run-item" key={run.run_id}>
-                <div className="agent-run-head">
-                  <span className="agent-run-question">{run.question}</span>
-                  <span className="agent-run-time">{formatDateTime(run.created_at)}</span>
-                </div>
-                <p className="agent-run-answer">{run.answer}</p>
-                <div className="agent-run-meta">
-                  <span>{run.citations?.length ?? 0} citations</span>
-                  <span>{run.trace?.length ?? 0} steps</span>
-                </div>
-                {run.trace?.length ? <AgentActivity trace={run.trace} /> : null}
-              </li>
+              <AgentRunItem key={run.run_id} run={run} />
             ))}
           </ol>
         ) : null}
       </section>
     </div>
+  );
+}
+
+function AgentRunItem({ run }) {
+  const usageDetails = formatRunUsageSummary(run.usage);
+  return (
+    <li className="agent-run-item">
+      <div className="agent-run-head">
+        <span className="agent-run-question">{run.question}</span>
+        <span className="agent-run-time">{formatDateTime(run.created_at)}</span>
+      </div>
+      <p className="agent-run-answer">{run.answer}</p>
+      <div className="agent-run-meta">
+        <span>{run.citations?.length ?? 0} citations</span>
+        <span>{run.trace?.length ?? 0} steps</span>
+      </div>
+      {usageDetails.length ? (
+        <div className="agent-run-usage">
+          {usageDetails.map((detail) => (
+            <span key={detail}>{detail}</span>
+          ))}
+        </div>
+      ) : null}
+      {run.trace?.length ? <AgentActivity trace={run.trace} stopReason={run.stop_reason} /> : null}
+    </li>
   );
 }

@@ -5,6 +5,10 @@ from app.vectorstore.indexing import index_chunks
 
 class WebSnippetIngestTool:
     name = "web_snippet_ingest"
+    description = "Persist web search chunks into the vector store scoped to the current chat when available."
+    input_schema = {"web_chunks": "list[RetrievedChunk]", "chat_id": "string|null"}
+    when_to_use = "Use after web_search returns useful chunks that should be available for follow-up retrieval."
+    failure_modes = ["no_web_chunks", "embedding_failure", "vector_store_write_failure"]
 
     async def run(self, input: dict) -> ToolResult:
         web_chunks = input.get("web_chunks") or []
@@ -39,12 +43,22 @@ class WebSnippetIngestTool:
                 )
             )
 
+        embedding_usage = None
         if chunks_to_index:
-            await index_chunks(chunks_to_index)
+            embedding_usage = await index_chunks(chunks_to_index)
 
         result_metadata = {"snippets_ingested": len(chunks_to_index)}
         if chat_id:
             result_metadata["chat_id"] = chat_id
+        if embedding_usage:
+            result_metadata.update(
+                {
+                    "embedding_model": embedding_usage.model,
+                    "embedding_input_count": embedding_usage.input_count,
+                    "embedding_tokens": embedding_usage.total_tokens,
+                    "embedding_estimated_cost_usd": embedding_usage.estimated_cost_usd,
+                }
+            )
 
         return ToolResult(
             tool_name=self.name,

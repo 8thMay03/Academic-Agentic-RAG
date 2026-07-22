@@ -7,6 +7,7 @@ from app.config.settings import settings
 from app.parser.chunker import chunk_text_with_metadata
 from app.parser.cleaner import PAGE_BREAK, clean_text
 from app.parser.pdf_parser import extract_text_from_pdf
+from app.services.embedding_service import EmbeddingUsage
 from app.vectorstore.indexing import index_chunks
 
 
@@ -17,6 +18,7 @@ class PDFIndexResult:
     chunks_indexed: int
     cached: bool = False
     source_metadata: dict = field(default_factory=dict)
+    embedding_usage: EmbeddingUsage | None = None
 
 
 class PDFIndexService:
@@ -82,7 +84,7 @@ class PDFIndexService:
                 }
             )
 
-        await index_chunks(chunks)
+        embedding_usage = await index_chunks(chunks)
         manifest[pdf_path.name] = {
             **signature,
             "paper_id": paper_id,
@@ -96,6 +98,7 @@ class PDFIndexService:
             chunks_indexed=len(chunks),
             cached=False,
             source_metadata=source_metadata,
+            embedding_usage=embedding_usage,
         )
 
     @staticmethod

@@ -2,6 +2,7 @@ import json
 import re
 
 from app.models.chat import ChatHistoryMessage
+from app.services.embedding_service import EmbeddingUsage, aggregate_embedding_usages
 from app.services.llm_service import LLMService
 from app.services.retriever_service import RetrieverService
 
@@ -19,6 +20,7 @@ class RAGService:
     ) -> None:
         self._retriever_service = retriever_service
         self._llm_service = llm_service
+        self.last_embedding_usage: EmbeddingUsage | None = None
 
     async def retrieve_context(
         self,
@@ -29,6 +31,7 @@ class RAGService:
         score_threshold: float | None = 0.65,
         chat_history: list[ChatHistoryMessage] | None = None,
     ) -> list[dict]:
+        embedding_usages: list[EmbeddingUsage | None] = []
         retrieval_queries = await self._build_retrieval_queries(question, chat_history)
         chunks = await self._retrieve_with_queries(
             retrieval_queries,
@@ -36,6 +39,7 @@ class RAGService:
             score_threshold=score_threshold,
             paper_ids=paper_ids,
             chat_id=chat_id,
+            embedding_usages=embedding_usages,
         )
 
         if not chunks and score_threshold is not None and score_threshold > 0:
@@ -45,8 +49,10 @@ class RAGService:
                 score_threshold=None,
                 paper_ids=paper_ids,
                 chat_id=chat_id,
+                embedding_usages=embedding_usages,
             )
 
+        self.last_embedding_usage = aggregate_embedding_usages(embedding_usages)
         chunks = self._filter_by_chat_scope(chunks, chat_id)
         return self._filter_by_original_question_anchors(question, chunks)
 
@@ -57,6 +63,7 @@ class RAGService:
         score_threshold: float | None,
         paper_ids: list[str] | None,
         chat_id: str | None,
+        embedding_usages: list[EmbeddingUsage | None],
     ) -> list[dict]:
         retrieved_chunks = []
         for retrieval_query in retrieval_queries:
@@ -67,6 +74,7 @@ class RAGService:
                 paper_ids=paper_ids,
                 chat_id=chat_id,
             )
+            embedding_usages.append(getattr(self._retriever_service, "last_embedding_usage", None))
             retrieved_chunks.extend(self._filter_by_paper_ids(chunks, paper_ids))
 
         return self._merge_retrieved_chunks(retrieved_chunks)[:top_k]

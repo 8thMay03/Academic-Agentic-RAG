@@ -24,6 +24,12 @@ async def observer_node(state: AgenticRAGState) -> AgenticRAGState:
         trace_fields["chunks_indexed"] = int(metadata["chunks_indexed"])
     if "snippets_ingested" in metadata:
         trace_fields["snippets_ingested"] = int(metadata["snippets_ingested"])
+    if "embedding_input_count" in metadata:
+        trace_fields["embedding_input_count"] = int(metadata["embedding_input_count"])
+    if "embedding_tokens" in metadata:
+        trace_fields["embedding_tokens"] = int(metadata["embedding_tokens"])
+    if "embedding_estimated_cost_usd" in metadata:
+        trace_fields["embedding_estimated_cost_usd"] = float(metadata["embedding_estimated_cost_usd"])
     for key in (
         "source_type",
         "source_url",
@@ -31,6 +37,7 @@ async def observer_node(state: AgenticRAGState) -> AgenticRAGState:
         "discovered_by_query",
         "trust_level",
         "ingestion_status",
+        "embedding_model",
     ):
         if metadata.get(key) is not None:
             trace_fields[key] = str(metadata[key])

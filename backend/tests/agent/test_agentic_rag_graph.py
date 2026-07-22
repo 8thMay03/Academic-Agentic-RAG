@@ -90,6 +90,7 @@ async def test_agentic_rag_graph_answers_from_sufficient_local_context() -> None
     assert result.trace[-1]["status"] == "passed"
     assert web.calls == []
     assert result.answer == "It uses planning [1]."
+    assert result.stop_reason == "answered_with_sufficient_context"
 
 
 @pytest.mark.asyncio
@@ -135,6 +136,8 @@ async def test_agentic_rag_graph_routes_to_web_when_local_context_is_insufficien
         "observe",
         "execute_tool",
         "observe",
+        "execute_tool",
+        "observe",
         "draft_answer",
         "generate_answer",
         "verify_answer",
@@ -142,13 +145,16 @@ async def test_agentic_rag_graph_routes_to_web_when_local_context_is_insufficien
     assert result.trace[1]["query_type"] == "comparison"
     assert result.trace[2]["query_count"] > 1
     assert result.trace[5]["reason"] == "no_local_context"
-    assert result.trace[6]["step_count"] == 2
-    assert result.trace[7]["tool_name"] == "web_search"
-    assert result.trace[8]["chunk_count"] == 1
-    assert result.trace[9]["tool_name"] == "web_snippet_ingest"
-    assert result.trace[10]["snippets_ingested"] == 1
+    assert result.trace[6]["step_count"] == 3
+    assert result.trace[7]["tool_name"] == "local_retrieve"
+    assert result.trace[8]["chunk_count"] == 0
+    assert result.trace[9]["tool_name"] == "web_search"
+    assert result.trace[10]["chunk_count"] == 1
+    assert result.trace[11]["tool_name"] == "web_snippet_ingest"
+    assert result.trace[12]["snippets_ingested"] == 1
     assert web.calls == [{"query": "How does Agentic RAG differ from CRAG?", "max_results": 5}]
     assert result.citations[0].chunk_id == "web:1"
+    assert result.stop_reason == "answered_after_recovery"
 
 
 @pytest.mark.asyncio
@@ -184,12 +190,11 @@ async def test_agentic_rag_graph_respects_agent_step_limit() -> None:
         "execute_tool",
         "observe",
         "draft_answer",
-        "generate_answer",
-        "verify_answer",
     ]
     assert result.trace[6]["step_count"] == 1
-    assert result.trace[7]["tool_name"] == "web_search"
-    assert "web_snippet_ingest" not in [event.get("tool_name") for event in result.trace]
+    assert result.trace[7]["tool_name"] == "local_retrieve"
+    assert "web_search" not in [event.get("tool_name") for event in result.trace]
+    assert result.stop_reason == "no_context_available"
 
 
 @pytest.mark.asyncio
@@ -221,11 +226,43 @@ async def test_agentic_rag_graph_stops_when_web_search_is_disabled() -> None:
         "local_retrieve",
         "quality_gate",
         "plan",
+        "execute_tool",
+        "observe",
         "draft_answer",
     ]
-    assert result.trace[6]["step_count"] == 0
+    assert result.trace[6]["step_count"] == 1
+    assert result.trace[7]["tool_name"] == "local_retrieve"
     assert result.answer == "I don't know"
     assert web.calls == []
+    assert result.stop_reason == "web_search_disabled"
+
+
+@pytest.mark.asyncio
+async def test_agentic_rag_graph_retries_local_retrieval_before_web_search() -> None:
+    local_tool = StatefulLocalRetrieveTool()
+    web = FakeWebSearchService(
+        [
+            {
+                "title": "Should not be needed",
+                "url": "https://example.com/unused",
+                "content": "Unused web evidence.",
+            }
+        ]
+    )
+    workflow = AgenticChatWorkflow(
+        FakeRAGService([]),
+        FakeLLMService("Fresh Agentic RAG systems add reflection [fresh-paper:p2:c0]."),
+        web,
+        tool_registry=ToolRegistry([local_tool, WebSearchTool(web)]),
+    )
+
+    result = await workflow.run(ChatWorkflowRequest("How do fresh Agentic RAG systems improve?"))
+
+    assert local_tool.calls == 2
+    assert web.calls == []
+    assert [event.get("tool_name") for event in result.trace if event["stage"] == "execute_tool"] == ["local_retrieve"]
+    assert result.citations[0].chunk_id == "fresh-paper:p2:c0"
+    assert result.stop_reason == "answered_after_recovery"
 
 
 @pytest.mark.asyncio
@@ -289,20 +326,20 @@ async def test_tool_executor_returns_structured_failure_when_web_search_limit_is
     assert result_state["tool_calls"][0].input == {"query": "agentic rag"}
     assert result_state["tool_calls"][0].reason == "Search externally."
     assert result_state["tool_calls"][0].step_index == 0
-    assert result_state["trace"] == [
-        {
-            "stage": "execute_tool",
+    assert result_state["trace"][0]["latency_ms"] >= 0
+    assert result_state["trace"][0] == {
+        "stage": "execute_tool",
+        "tool_name": "web_search",
+        "step_index": 0,
+        "success": False,
+        "reason": "Tool limit reached for web_search: 1/1.",
+        "latency_ms": result_state["trace"][0]["latency_ms"],
+        "tool_result": {
             "tool_name": "web_search",
-            "step_index": 0,
             "success": False,
-            "reason": "Tool limit reached for web_search: 1/1.",
-            "tool_result": {
-                "tool_name": "web_search",
-                "success": False,
-                "error": "Tool limit reached for web_search: 1/1.",
-            },
-        }
-    ]
+            "error": "Tool limit reached for web_search: 1/1.",
+        },
+    }
 
 
 @pytest.mark.asyncio

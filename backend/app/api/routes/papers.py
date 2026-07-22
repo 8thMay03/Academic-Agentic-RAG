@@ -67,10 +67,13 @@ async def upload_local_pdfs(files: list[UploadFile] = File(...)) -> list[Downloa
     saved_files: list[Path] = []
     for upload, filename in zip(files, filenames, strict=True):
         destination_path = _unique_pdf_path(destination_dir, filename)
-        with destination_path.open("wb") as output_file:
-            while chunk := await upload.read(1024 * 1024):
-                output_file.write(chunk)
-        saved_files.append(destination_path)
+        try:
+            await _save_uploaded_pdf(upload, destination_path)
+            saved_files.append(destination_path)
+        except HTTPException:
+            if destination_path.exists():
+                destination_path.unlink()
+            raise
 
     return [
         DownloadedPDF(
@@ -171,3 +174,33 @@ def _unique_pdf_path(destination_dir: Path, filename: str) -> Path:
         if not candidate.exists():
             return candidate
         counter += 1
+
+
+async def _save_uploaded_pdf(upload: UploadFile, destination_path: Path) -> None:
+    bytes_written = 0
+    first_chunk = True
+    with destination_path.open("wb") as output_file:
+        while chunk := await upload.read(1024 * 1024):
+            if first_chunk:
+                first_chunk = False
+                if not chunk.startswith(b"%PDF"):
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail=f"Uploaded file is not a valid PDF: {upload.filename}",
+                    )
+            bytes_written += len(chunk)
+            if bytes_written > settings.MAX_PDF_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    detail=(
+                        f"PDF exceeds upload limit of "
+                        f"{settings.MAX_PDF_UPLOAD_BYTES} bytes: {upload.filename}"
+                    ),
+                )
+            output_file.write(chunk)
+
+    if bytes_written == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Uploaded PDF is empty: {upload.filename}",
+        )

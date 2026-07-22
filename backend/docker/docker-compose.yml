@@ -7,6 +7,21 @@ services:
       - ../.env
     ports:
       - "8000:8000"
+    environment:
+      DATA_DIR: /app/data
+      CHROMA_DIR: /app/data/chroma
     volumes:
       - ../data:/app/data
-
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped

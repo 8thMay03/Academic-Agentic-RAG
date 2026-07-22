@@ -67,6 +67,73 @@ async def test_download_pdf_rejects_non_pdf_content(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_download_pdf_rejects_unsupported_url_scheme(tmp_path) -> None:
+    service = PDFService()
+
+    with pytest.raises(PDFDownloadError, match="Unsupported PDF URL scheme"):
+        await service.download_pdf("file:///etc/passwd", tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_blocks_localhost_url(tmp_path) -> None:
+    service = PDFService()
+
+    with pytest.raises(PDFDownloadError, match="Blocked unsafe PDF URL host"):
+        await service.download_pdf("http://127.0.0.1/private.pdf", tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_blocks_private_network_url(tmp_path) -> None:
+    service = PDFService()
+
+    with pytest.raises(PDFDownloadError, match="Blocked unsafe PDF URL host"):
+        await service.download_pdf("http://192.168.1.10/private.pdf", tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_rejects_hosts_outside_allowed_domains(tmp_path) -> None:
+    service = PDFService(allowed_domains=["arxiv.org"])
+
+    with pytest.raises(PDFDownloadError, match="outside allowed domains"):
+        await service.download_pdf("https://example.com/paper.pdf", tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_allows_subdomains_of_allowed_domains(tmp_path) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://export.arxiv.org/pdf/2606.12345v1"
+        return httpx.Response(200, content=PDF_BYTES, headers={"content-type": "application/pdf"})
+
+    async with _client_for(httpx.MockTransport(handler)) as client:
+        service = PDFService(client=client, allowed_domains=["arxiv.org"])
+
+        downloaded_path = await service.download_pdf(
+            "https://export.arxiv.org/pdf/2606.12345v1",
+            tmp_path,
+        )
+
+    assert downloaded_path == tmp_path / "2606.12345v1.pdf"
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_rejects_oversized_content_length(tmp_path) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=PDF_BYTES,
+            headers={"content-type": "application/pdf", "content-length": "999"},
+        )
+
+    async with _client_for(httpx.MockTransport(handler)) as client:
+        service = PDFService(client=client, max_download_bytes=10)
+
+        with pytest.raises(PDFDownloadError, match="exceeds size limit"):
+            await service.download_pdf("https://example.com/paper.pdf", tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
 async def test_download_pdf_uses_cached_file_without_http_request(tmp_path) -> None:
     cached_path = tmp_path / "2606.12345v1.pdf"
     cached_path.write_bytes(PDF_BYTES)

@@ -1,4 +1,5 @@
 from app.models.chunk import Chunk
+from app.services.embedding_service import EmbeddingUsage
 from app.vectorstore.chroma import ChromaVectorStore
 
 
@@ -20,7 +21,8 @@ def chunks_to_documents(chunks: list[Chunk]) -> tuple[list[str], list[dict]]:
 async def index_chunks(
     chunks: list[Chunk],
     vector_store: ChromaVectorStore | None = None,
-) -> None:
+) -> EmbeddingUsage | None:
     documents, metadatas = chunks_to_documents(chunks)
     store = vector_store or ChromaVectorStore()
     await store.add_documents(documents, metadatas)
+    return store.last_embedding_usage

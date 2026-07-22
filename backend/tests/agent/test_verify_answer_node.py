@@ -1,6 +1,6 @@
 import pytest
 
-from app.agent.models import VerificationResult
+from app.agent.models import ClaimVerification, VerificationResult
 from app.agent.citations import CitationGrounder
 from app.agent.nodes.verify_answer_node import verification_trace_event, verify_answer_node
 
@@ -41,6 +41,10 @@ def test_verification_trace_event_records_verifier_decision():
             "success": False,
             "issue_count": 1,
             "unsupported_claim_count": 1,
+            "supported_claim_count": 0,
+            "contradicted_claim_count": 0,
+            "insufficient_claim_count": 0,
+            "claim_citation_map": [],
             "suggested_action": "retrieve_more",
         },
     ]
@@ -65,8 +69,43 @@ def test_verification_trace_event_marks_passed_answers():
             "success": True,
             "issue_count": 0,
             "unsupported_claim_count": 0,
+            "supported_claim_count": 0,
+            "contradicted_claim_count": 0,
+            "insufficient_claim_count": 0,
+            "claim_citation_map": [],
             "suggested_action": "finalize",
         },
+    ]
+
+
+def test_verification_trace_event_records_claim_citation_map():
+    verification = VerificationResult(
+        passed=True,
+        answer="Agentic RAG uses planning [paper-1:p3:c0].",
+        citations=[],
+        issues=[],
+        unsupported_claims=[],
+        suggested_action="finalize",
+        claim_verifications=[
+            ClaimVerification(
+                claim="Agentic RAG uses planning [paper-1:p3:c0].",
+                status="supported",
+                supporting_chunk_ids=["paper-1:p3:c0"],
+                reason="claim_terms_overlap_cited_evidence",
+            )
+        ],
+    )
+
+    trace = verification_trace_event([], verification)
+
+    assert trace[0]["supported_claim_count"] == 1
+    assert trace[0]["claim_citation_map"] == [
+        {
+            "claim": "Agentic RAG uses planning [paper-1:p3:c0].",
+            "status": "supported",
+            "supporting_chunk_ids": ["paper-1:p3:c0"],
+            "reason": "claim_terms_overlap_cited_evidence",
+        }
     ]
 
 
@@ -95,5 +134,9 @@ async def test_verify_answer_node_updates_answer_citations_and_trace():
         "success": True,
         "issue_count": 0,
         "unsupported_claim_count": 0,
+        "supported_claim_count": 0,
+        "contradicted_claim_count": 0,
+        "insufficient_claim_count": 0,
+        "claim_citation_map": [],
         "suggested_action": "finalize",
     }

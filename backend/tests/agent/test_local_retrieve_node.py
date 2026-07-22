@@ -57,6 +57,10 @@ async def test_local_retrieve_node_uses_tool_contract():
                 "success": True,
                 "query_count": 1,
                 "queries": ["How does Agentic RAG retrieve?"],
+                "retrieval_mode": "focused",
+                "per_query_top_k": 3,
+                "score_threshold": 0.7,
+                "max_total_chunks": None,
                 "tool_result": {
                     "tool_name": "local_retrieve",
                     "success": True,
@@ -70,6 +74,41 @@ async def test_local_retrieve_node_uses_tool_contract():
             },
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_local_retrieve_node_records_embedding_usage():
+    chunk = {
+        "id": "paper-1:p1:c0",
+        "text": "Agentic RAG plans before retrieving.",
+        "citation": {"chunk_id": "paper-1:p1:c0"},
+    }
+    tool_registry = FakeToolRegistry(
+        ToolResult(
+            tool_name="local_retrieve",
+            success=True,
+            chunks=[chunk],
+            metadata={
+                "embedding_model": "text-embedding-test",
+                "embedding_input_count": 1,
+                "embedding_tokens": 9,
+                "embedding_estimated_cost_usd": 0.0001,
+            },
+        )
+    )
+
+    state = await local_retrieve_node(
+        {
+            "tool_registry": tool_registry,
+            "request": ChatWorkflowRequest(question="How does Agentic RAG retrieve?"),
+            "trace": [],
+        }
+    )
+
+    assert state["trace"][0]["embedding_model"] == "text-embedding-test"
+    assert state["trace"][0]["embedding_input_count"] == 1
+    assert state["trace"][0]["embedding_tokens"] == 9
+    assert state["trace"][0]["embedding_estimated_cost_usd"] == 0.0001
 
 
 @pytest.mark.asyncio

@@ -29,9 +29,13 @@ async def test_recovery_planner_node_plans_web_search_from_verifier_feedback():
         "query": "How does Agentic RAG verify evidence?",
         "max_results": 3,
     }
+    assert state["planner_decision"].selected_tools == ["web_search"]
     assert state["trace"][-1] == {
         "stage": "plan",
         "status": "recovery",
         "step_count": 1,
         "reason": "Verifier requested more evidence for unsupported claims.",
+        "selected_tools": ["web_search"],
+        "stop_condition": "verification_passes_or_recovery_limit_reached",
+        "risk_notes": ["verifier_requested_more_evidence"],
     }

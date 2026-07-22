@@ -8,10 +8,14 @@ Hệ thống kết hợp thư viện PDF, tìm kiếm hybrid, LangGraph và tìm
 
 - Tải lên, xem trước và quản lý paper PDF cục bộ.
 - Parse, chia chunk, embedding và lưu dữ liệu trong ChromaDB.
+- Chunk PDF lưu metadata section như abstract, method, experiments, results, limitations khi detect được heading.
 - Truy xuất hybrid giữa vector search và keyword search, có cross-encoder reranking.
+- Keyword search dùng BM25 index persistent riêng, tránh đọc toàn bộ Chroma collection ở mỗi truy vấn.
 - Hỏi đáp theo một hoặc nhiều paper, kèm nguồn trích dẫn.
 - Streaming câu trả lời và trạng thái từng bước của agent.
 - Quản lý phiên chat, nguồn tài liệu, lịch sử chạy và research findings.
+- Agent run history lưu stop reason, trace, latency, chat/embedding token usage và estimated cost summary.
+- API response và streaming events có `X-Request-ID`/`request_id` để trace một request khi debug.
 - Đánh giá chất lượng context trước khi trả lời.
 - Tìm kiếm Tavily khi kho tri thức cục bộ chưa đủ.
 - Tìm paper mới trên arXiv, tải PDF, index và truy xuất lại cho câu hỏi cần thông tin mới.
@@ -66,6 +70,56 @@ Agent có thể sử dụng các tool:
 - `pdf_index`: parse, chunk và index PDF vào vector store.
 
 Endpoint streaming gửi các bước agent ngay khi LangGraph thực thi. Câu trả lời hiện được sinh hoàn chỉnh rồi chia theo từ để truyền dần qua NDJSON; đây chưa phải token streaming trực tiếp từ OpenAI.
+
+## Evaluation Benchmark
+
+Repo có evaluation harness trong `backend/evals/` với 110 cases chia theo factual, comparison, multi-hop, follow-up, unanswerable, fresh research và adversarial prompt-injection/citation-trap scenarios.
+
+Benchmark dưới đây dùng profile deterministic `offline_fixture` để kiểm tra methodology và expected behavior của bốn baseline mà không cần OpenAI, Chroma hay Tavily. Đây không phải kết quả live trên corpus thật; khi dùng làm portfolio cuối cùng, cần chạy thêm profile `live` trên dữ liệu PDF đã index.
+
+```bash
+cd backend
+python evals/run_eval.py --profile offline_fixture --mode all --output evals/results/offline_fixture_results.json --report-output evals/results/offline_fixture_report.md
+```
+
+| Mode | Cases | Answer recall | Citation precision | Citation recall | Retrieval recall | Abstention acc. | p50 latency | p95 latency |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `vector_only_rag` | 110 | 0.545 | 0.727 | 0.591 | 0.591 | 0.773 | 180 ms | 180 ms |
+| `hybrid_rag` | 110 | 0.727 | 0.909 | 0.727 | 0.909 | 0.909 | 260 ms | 260 ms |
+| `hybrid_rerank_rag` | 110 | 0.864 | 0.864 | 0.909 | 0.909 | 0.909 | 430 ms | 430 ms |
+| `full_agentic_rag` | 110 | 0.982 | 0.991 | 0.991 | 0.991 | 0.991 | 620 ms | 780 ms |
+
+Ngoài ra có profile `local_fixture` để index fixture chunks vào Chroma tạm thời và chạy retrieval/agent workflow thật mà không cần external API:
+
+```bash
+cd backend
+python evals/run_eval.py --dataset tests/fixtures/eval_cases.jsonl --profile local_fixture --mode all --output evals/results/local_fixture_results.json --report-output evals/results/local_fixture_report.md
+```
+
+Kết quả hiện tại trên 2 fixture cases: `full_agentic_rag` đạt citation precision `1.000`, retrieval recall `1.000`, abstention accuracy `1.000`; các baseline non-agentic đạt retrieval recall `1.000` nhưng citation precision `0.250` do không qua verifier/grounding agentic đầy đủ.
+
+Các báo cáo markdown có thể đọc trực tiếp tại `backend/evals/results/offline_fixture_report.md` và `backend/evals/results/local_fixture_report.md`.
+
+## Demo Trace
+
+Ví dụ trace rút gọn cho câu hỏi thiếu context cục bộ và cần agent tự mở rộng bằng web:
+
+```json
+[
+  {"stage": "query_planning", "query_type": "comparison", "reason": "question_compares_multiple_items"},
+  {"stage": "retrieval_planning", "retrieval_mode": "comparative", "per_query_top_k": 4, "max_total_chunks": 12},
+  {"stage": "local_retrieve", "success": true, "chunk_count": 0, "query_count": 4},
+  {"stage": "quality_gate", "sufficient": false, "reason": "no_local_context"},
+  {"stage": "plan", "planner_source": "heuristic", "selected_tools": ["web_search", "web_snippet_ingest"], "step_count": 2},
+  {"stage": "execute_tool", "tool_name": "web_search", "success": true, "latency_ms": 412},
+  {"stage": "observe", "tool_name": "web_search", "chunk_count": 3},
+  {"stage": "quality_gate", "sufficient": true, "reason": "external_evidence_available"},
+  {"stage": "generate_answer", "latency_ms": 1380, "input_tokens": 2100, "output_tokens": 220, "estimated_cost_usd": 0.0012},
+  {"stage": "verify_answer", "success": true, "supported_claim_count": 2, "contradicted_claim_count": 0}
+]
+```
+
+Trace đầy đủ được lưu trong agent run history và hiển thị trong Agent Memory panel của frontend.
 
 ## Công nghệ
 
@@ -190,7 +244,7 @@ Các dịch vụ:
 | Backend API | http://localhost:8000/api/v1 |
 | Swagger UI | http://localhost:8000/docs |
 
-Docker Compose ở thư mục gốc mount `backend/` vào container, vì vậy dữ liệu runtime được giữ tại `backend/data/`.
+Docker Compose ở thư mục gốc mount riêng `backend/data:/app/data`, vì vậy dữ liệu runtime được giữ tại `backend/data/` nhưng source code trong image không bị bind-mount đè lên khi chạy container.
 
 Nếu chỉ cần backend:
 
@@ -211,7 +265,25 @@ Backend đọc biến môi trường từ `backend/.env`.
 | `OPENAI_API_KEY` | trống | API key cho LLM và embedding |
 | `OPENAI_CHAT_MODEL` | `gpt-4.1-mini` | Model sinh và đánh giá câu trả lời |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Model embedding |
+| `OPENAI_CHAT_INPUT_COST_PER_1M` | `0.0` | Chi phí input token trên 1 triệu token cho trace/eval cost estimate |
+| `OPENAI_CHAT_OUTPUT_COST_PER_1M` | `0.0` | Chi phí output token trên 1 triệu token cho trace/eval cost estimate |
+| `OPENAI_EMBEDDING_COST_PER_1M` | `0.0` | Chi phí embedding trên 1 triệu token cho trace/eval cost estimate |
+| `WEB_SEARCH_COST_USD` | `0.0` | Chi phí ước tính cho mỗi lần gọi `web_search` |
+| `ARXIV_SEARCH_COST_USD` | `0.0` | Chi phí ước tính cho mỗi lần gọi `arxiv_search` |
+| `PDF_DOWNLOAD_COST_USD` | `0.0` | Chi phí ước tính cho mỗi lần gọi `pdf_download` |
+| `PDF_INDEX_COST_USD` | `0.0` | Chi phí ước tính cho mỗi lần gọi `pdf_index`, chưa gồm embedding cost riêng |
+| `WEB_SNIPPET_INGEST_COST_USD` | `0.0` | Chi phí ước tính cho mỗi lần gọi `web_snippet_ingest`, chưa gồm embedding cost riêng |
+| `LOCAL_RETRIEVE_COST_USD` | `0.0` | Chi phí ước tính cho mỗi lần gọi `local_retrieve`, chưa gồm embedding cost riêng |
 | `TAVILY_API_KEY` | trống | API key cho web search |
+| `API_KEY` | trống | Nếu set, backend yêu cầu `X-API-Key` hoặc `Authorization: Bearer` cho API endpoints |
+| `API_RATE_LIMIT_PER_MINUTE` | `0` | Giới hạn request/phút theo client hoặc API key; `0` là tắt |
+| `LOG_LEVEL` | `INFO` | Mức log backend; request logs dùng JSON và có `request_id` |
+| `CORS_ALLOW_ORIGINS` | localhost frontend origins | Danh sách origin CORS, phân tách bằng dấu phẩy |
+| `MAX_PDF_DOWNLOAD_BYTES` | `52428800` | Giới hạn kích thước PDF tải từ URL để giảm rủi ro abuse |
+| `MAX_PDF_UPLOAD_BYTES` | `26214400` | Giới hạn kích thước mỗi PDF upload từ local |
+| `PDF_DOWNLOAD_ALLOWED_DOMAINS` | trống | Nếu set, chỉ cho tải PDF từ các domain trong danh sách, ví dụ `arxiv.org,openreview.net` |
+| `ENABLE_LLM_PLANNER` | `false` | Bật planner dùng LLM structured JSON; lỗi parse sẽ fallback heuristic |
+| `ENABLE_LLM_VERIFIER` | `false` | Bật LLM claim judge cho semantic verification; lỗi provider sẽ fallback heuristic |
 | `DATA_DIR` | `data` | Thư mục lưu PDF, lịch sử và agent runs |
 | `CHROMA_DIR` | `data/chroma` | Thư mục ChromaDB |
 | `INDEX_LOCAL_PDFS_ON_STARTUP` | `true` | Tự index PDF cục bộ khi backend khởi động |
@@ -264,6 +336,14 @@ Base path: `/api/v1`
 Schema request/response đầy đủ có tại Swagger UI sau khi backend khởi động.
 
 ## Kiểm thử và kiểm tra chất lượng
+
+Tài liệu kỹ thuật bổ sung:
+
+- `backend/docs/agentic_design.md`: state, decision points, planner, tools, verification và giới hạn agentic hiện tại.
+- `backend/docs/evaluation.md`: baseline, dataset format, metrics và cách chạy eval.
+- `backend/docs/security.md`: rủi ro ingestion và mitigation hiện có.
+- `backend/docs/deployment.md`: Docker, health check và production gaps.
+- `backend/docs/workflow.md`: flow LangGraph hiện tại.
 
 Backend:
 

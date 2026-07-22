@@ -12,6 +12,7 @@ from app.agent.tools.web_search_tool import WebSearchTool
 from app.agent.tools.web_snippet_ingest_tool import WebSnippetIngestTool
 from app.models.chat import ChatHistoryMessage
 from app.models.paper import Paper
+from app.services.embedding_service import EmbeddingUsage
 from app.services.pdf_index_service import PDFIndexResult
 from app.services.pdf_service import PDFDownloadResult
 from app.services.web_search_service import WebSearchResult
@@ -20,6 +21,7 @@ from app.services.web_search_service import WebSearchResult
 class FakeRAGService:
     def __init__(self) -> None:
         self.calls = []
+        self.last_embedding_usage = None
 
     async def retrieve_context(
         self,
@@ -41,6 +43,17 @@ class FakeRAGService:
             }
         )
         return [{"id": "paper-1:p1:c0", "text": "Planning retrieves evidence."}]
+
+
+class FakeRAGServiceWithEmbeddingUsage(FakeRAGService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_embedding_usage = EmbeddingUsage(
+            model="text-embedding-test",
+            input_count=1,
+            total_tokens=13,
+            estimated_cost_usd=0.0003,
+        )
 
 
 class FakeWebSearchService:
@@ -115,6 +128,23 @@ class FakePDFIndexService:
         )
 
 
+class FakePDFIndexServiceWithUsage:
+    async def index_downloaded_pdf(self, filename: str, force: bool = False, source_metadata: dict | None = None):
+        return PDFIndexResult(
+            paper_id="2601.12345",
+            filename=filename,
+            chunks_indexed=12,
+            cached=False,
+            source_metadata=source_metadata or {},
+            embedding_usage=EmbeddingUsage(
+                model="text-embedding-test",
+                input_count=12,
+                total_tokens=256,
+                estimated_cost_usd=0.0005,
+            ),
+        )
+
+
 class EchoTool:
     name = "echo"
 
@@ -170,6 +200,31 @@ async def test_local_retrieve_tool_delegates_to_rag_service() -> None:
             "chat_history": history,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_local_retrieve_tool_reports_query_embedding_usage() -> None:
+    tool = LocalRetrieveTool(FakeRAGServiceWithEmbeddingUsage())
+
+    result = await tool.run(
+        local_retrieve_input(
+            question="What is the method?",
+            chat_id=None,
+            paper_ids=None,
+            top_k=3,
+            score_threshold=0.7,
+            chat_history=None,
+        )
+    )
+
+    assert result.metadata == {
+        "chunk_count": 1,
+        "paper_ids": None,
+        "embedding_model": "text-embedding-test",
+        "embedding_input_count": 1,
+        "embedding_tokens": 13,
+        "embedding_estimated_cost_usd": 0.0003,
+    }
 
 
 @pytest.mark.asyncio
@@ -326,6 +381,40 @@ async def test_web_snippet_ingest_tool_scopes_chunks_to_chat(monkeypatch) -> Non
 
 
 @pytest.mark.asyncio
+async def test_web_snippet_ingest_tool_reports_embedding_usage(monkeypatch) -> None:
+    async def fake_index_chunks(chunks):
+        return EmbeddingUsage(
+            model="text-embedding-test",
+            input_count=len(chunks),
+            total_tokens=11,
+            estimated_cost_usd=0.0002,
+        )
+
+    monkeypatch.setattr("app.agent.tools.web_snippet_ingest_tool.index_chunks", fake_index_chunks)
+    tool = WebSnippetIngestTool()
+
+    result = await tool.run(
+        {
+            "web_chunks": [
+                {
+                    "id": "web:1",
+                    "text": "This is long enough web content about agentic retrieval planning.",
+                    "metadata": {"chunk_id": "web:1", "url": "https://example.com/agentic"},
+                }
+            ],
+        }
+    )
+
+    assert result.metadata == {
+        "snippets_ingested": 1,
+        "embedding_model": "text-embedding-test",
+        "embedding_input_count": 1,
+        "embedding_tokens": 11,
+        "embedding_estimated_cost_usd": 0.0002,
+    }
+
+
+@pytest.mark.asyncio
 async def test_tool_registry_runs_registered_tools_by_name() -> None:
     registry = ToolRegistry([EchoTool()])
 
@@ -413,6 +502,24 @@ async def test_pdf_index_tool_indexes_downloaded_filename() -> None:
         "filename": "2601.12345.pdf",
         "chunks_indexed": 12,
         "cached": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_pdf_index_tool_reports_embedding_usage() -> None:
+    tool = PDFIndexTool(FakePDFIndexServiceWithUsage())
+
+    result = await tool.run({"filename": "2601.12345.pdf"})
+
+    assert result.metadata == {
+        "paper_id": "2601.12345",
+        "filename": "2601.12345.pdf",
+        "chunks_indexed": 12,
+        "cached": False,
+        "embedding_model": "text-embedding-test",
+        "embedding_input_count": 12,
+        "embedding_tokens": 256,
+        "embedding_estimated_cost_usd": 0.0005,
     }
 
 

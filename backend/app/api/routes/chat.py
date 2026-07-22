@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import get_agent_run_store, get_chat_history_store, get_chat_service
+from app.middleware.request_id import current_request_id
+from app.observability.tracing import current_trace_fields
 from app.models.chat import (
     AgentRunListResponse,
     ChatHistoryResponse,
@@ -64,6 +66,7 @@ async def chat_with_papers(
             answer=result.answer,
             citations=result.citations,
             trace=trace,
+            stop_reason=result.stop_reason,
         )
         await agent_run_store.append_run(
             chat_id=history_key,
@@ -71,8 +74,14 @@ async def chat_with_papers(
             answer=result.answer,
             citations=result.citations,
             trace=trace,
+            stop_reason=result.stop_reason,
         )
-    return ChatResponse(answer=result.answer, citations=result.citations, trace=trace)
+    return ChatResponse(
+        answer=result.answer,
+        citations=result.citations,
+        trace=trace,
+        stop_reason=result.stop_reason,
+    )
 
 
 @router.post("/stream")
@@ -97,6 +106,7 @@ async def stream_chat_with_papers(
         answer_parts: list[str] = []
         citations = []
         trace = []
+        stop_reason = None
         try:
             async for event in chat_service.stream_events(
                 question=request.question,
@@ -127,6 +137,7 @@ async def stream_chat_with_papers(
                 elif event["type"] == "result":
                     result = event["result"]
                     citations = result.citations
+                    stop_reason = result.stop_reason
 
             answer = "".join(answer_parts)
             if history_key:
@@ -136,6 +147,7 @@ async def stream_chat_with_papers(
                     answer=answer,
                     citations=citations,
                     trace=trace,
+                    stop_reason=stop_reason,
                 )
                 await agent_run_store.append_run(
                     chat_id=history_key,
@@ -143,10 +155,16 @@ async def stream_chat_with_papers(
                     answer=answer,
                     citations=citations,
                     trace=trace,
+                    stop_reason=stop_reason,
                 )
-            yield _stream_event("done")
+            yield _stream_event("done", **({"stop_reason": stop_reason} if stop_reason else {}))
         except Exception as exc:
-            yield _stream_event("error", message=str(exc))
+            yield _stream_event(
+                "error",
+                error_code="chat_stream_failed",
+                message="Streaming chat failed.",
+                detail=str(exc),
+            )
 
     return StreamingResponse(
         event_stream(),
@@ -272,4 +290,9 @@ async def clear_chat_history(
 
 
 def _stream_event(event_type: str, **payload: object) -> str:
-    return json.dumps({"type": event_type, **payload}, ensure_ascii=False) + "\n"
+    request_id = current_request_id()
+    request_fields = {"request_id": request_id} if request_id else {}
+    return json.dumps(
+        {"type": event_type, **payload, **request_fields, **current_trace_fields()},
+        ensure_ascii=False,
+    ) + "\n"

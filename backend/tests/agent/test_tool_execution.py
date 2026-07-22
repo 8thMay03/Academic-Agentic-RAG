@@ -1,11 +1,14 @@
 import asyncio
 
 from app.agent.models import AgentLimits, ChatWorkflowRequest, ToolResult
+from app.agent.models import ResearchPlan, ResearchPlanStep
+from app.agent.nodes.tool_executor_node import tool_executor_node
 from app.agent.tools.execution import (
     prepare_tool_input,
     run_tool_with_timeout,
     tool_limit_error,
 )
+from app.config import settings as settings_module
 
 
 class SlowToolRegistry:
@@ -194,3 +197,56 @@ async def test_run_tool_with_timeout_returns_structured_exception_failure():
         success=False,
         error="Embedding service is unavailable.",
     )
+
+
+async def test_tool_executor_records_tool_latency() -> None:
+    state = await tool_executor_node(
+        {
+            "tool_registry": SlowToolRegistry(),
+            "plan": ResearchPlan(
+                goal="search",
+                steps=[
+                    ResearchPlanStep(
+                        tool_name="web_search",
+                        reason="Search externally.",
+                        input={"query": "agentic rag"},
+                    )
+                ],
+            ),
+            "current_step_index": 0,
+            "trace": [],
+        }
+    )
+
+    trace_event = state["trace"][0]
+    assert trace_event["stage"] == "execute_tool"
+    assert trace_event["tool_name"] == "web_search"
+    assert trace_event["success"] is True
+    assert trace_event["latency_ms"] > 0
+
+
+async def test_tool_executor_records_configured_external_tool_cost(monkeypatch) -> None:
+    monkeypatch.setattr(settings_module.settings, "WEB_SEARCH_COST_USD", 0.0025)
+
+    state = await tool_executor_node(
+        {
+            "tool_registry": SlowToolRegistry(),
+            "plan": ResearchPlan(
+                goal="search",
+                steps=[
+                    ResearchPlanStep(
+                        tool_name="web_search",
+                        reason="Search externally.",
+                        input={"query": "agentic rag"},
+                    )
+                ],
+            ),
+            "current_step_index": 0,
+            "trace": [],
+        }
+    )
+
+    trace_event = state["trace"][0]
+    assert trace_event["stage"] == "execute_tool"
+    assert trace_event["tool_estimated_cost_usd"] == 0.0025
+    assert trace_event["estimated_cost_usd"] == 0.0025

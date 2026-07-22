@@ -92,6 +92,7 @@ export async function streamChatWithPaper({
   let answer = "";
   let citations = [];
   let trace = [];
+  let stopReason = null;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -116,6 +117,8 @@ export async function streamChatWithPaper({
         onAgentStep?.(step);
       } else if (event.type === "error") {
         throw new Error(event.message ?? "Streaming chat failed.");
+      } else if (event.type === "done") {
+        stopReason = event.stop_reason ?? null;
       }
     }
   }
@@ -134,10 +137,12 @@ export async function streamChatWithPaper({
       onAgentStep?.(step);
     } else if (event.type === "error") {
       throw new Error(event.message ?? "Streaming chat failed.");
+    } else if (event.type === "done") {
+      stopReason = event.stop_reason ?? null;
     }
   }
 
-  return { answer, citations, trace };
+  return { answer, citations, trace, stopReason };
 }
 
 export async function listChatThreads() {

@@ -1,5 +1,5 @@
 from app.agent.models import ToolResult
-from app.agent.tools.base import AgentTool
+from app.agent.tools.base import AgentTool, describe_tool
 
 
 class ToolRegistry:
@@ -19,6 +19,9 @@ class ToolRegistry:
 
     def names(self) -> list[str]:
         return sorted(self._tools)
+
+    def descriptions(self) -> list[dict]:
+        return [describe_tool(self._tools[name]).__dict__ for name in self.names()]
 
     async def run(self, name: str, input: dict) -> ToolResult:
         return await self.get(name).run(input)

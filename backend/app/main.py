@@ -5,6 +5,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.api_router import api_router
+from app.api.security import api_key_middleware
+from app.config.logging import configure_logging
+from app.middleware.request_id import request_id_middleware
+from app.observability.tracing import configure_opentelemetry
 from app.config.settings import settings
 from app.services.pdf_index_service import PDFIndexService
 
@@ -26,6 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    configure_logging()
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
@@ -33,18 +38,14 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://localhost:4173",
-            "http://127.0.0.1:4173",
-            "http://localhost",
-            "http://127.0.0.1",
-        ],
+        allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.middleware("http")(api_key_middleware)
+    app.middleware("http")(request_id_middleware)
+    configure_opentelemetry(app)
     app.include_router(api_router, prefix=settings.API_PREFIX)
     return app
 

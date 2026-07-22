@@ -7,12 +7,13 @@ import remarkMath from "remark-math";
 
 import AgentActivity from "./AgentActivity.jsx";
 import CitationList from "./CitationList.jsx";
+import ClaimCitationMap from "./ClaimCitationMap.jsx";
 import { buildAssistantSegments, normalizeMathDelimiters } from "../utils/assistantMarkdown.js";
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm, remarkMath];
 const MARKDOWN_REHYPE_PLUGINS = [rehypeKatex];
 
-export default function ChatMessages({ activeChat, canChat, chatState, onOpenCitation, sourceState }) {
+export default function ChatMessages({ activeChat, chatState, onOpenCitation, sourceState }) {
   const logRef = useRef(null);
 
   useEffect(() => {
@@ -60,7 +61,12 @@ function ChatMessage({ message, onOpenCitation }) {
           {!content && message.streaming ? <span className="typing-dots">Đang suy nghĩ</span> : null}
           {message.streaming && content ? <span className="typing-cursor" aria-hidden="true" /> : null}
         </div>
-        {!isUser && message.trace?.length ? <AgentActivity trace={message.trace} active={Boolean(message.streaming)} /> : null}
+        {!isUser && message.trace?.length ? (
+          <AgentActivity trace={message.trace} active={Boolean(message.streaming)} stopReason={message.stop_reason ?? message.stopReason} />
+        ) : null}
+        {!isUser ? (
+          <ClaimCitationMap citations={message.citations} onOpenCitation={onOpenCitation} trace={message.trace} />
+        ) : null}
         <CitationList citations={message.citations} onOpenCitation={onOpenCitation} />
       </div>
     </article>

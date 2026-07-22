@@ -13,6 +13,10 @@ def verification_trace_event(
         success=verification.passed,
         issue_count=len(verification.issues),
         unsupported_claim_count=len(verification.unsupported_claims),
+        supported_claim_count=_claim_status_count(verification, "supported"),
+        contradicted_claim_count=_claim_status_count(verification, "contradicted"),
+        insufficient_claim_count=_claim_status_count(verification, "insufficient"),
+        claim_citation_map=_claim_citation_map(verification),
         suggested_action=verification.suggested_action,
     )
 
@@ -20,7 +24,10 @@ def verification_trace_event(
 async def verify_answer_node(state: AgenticRAGState) -> AgenticRAGState:
     verifier = state["answer_verifier"]
     citation_grounder = state["citation_grounder"]
-    verification = verifier.verify(state.get("answer", ""), state.get("citations", []))
+    if hasattr(verifier, "verify_async"):
+        verification = await verifier.verify_async(state.get("answer", ""), state.get("citations", []))
+    else:
+        verification = verifier.verify(state.get("answer", ""), state.get("citations", []))
     display_answer = citation_grounder.display_answer_with_numbered_citations(
         verification.answer,
         verification.citations,
@@ -32,3 +39,19 @@ async def verify_answer_node(state: AgenticRAGState) -> AgenticRAGState:
         "verification": verification,
         "trace": verification_trace_event(state.get("trace", []), verification),
     }
+
+
+def _claim_status_count(verification: VerificationResult, status: str) -> int:
+    return sum(1 for claim in verification.claim_verifications if claim.status == status)
+
+
+def _claim_citation_map(verification: VerificationResult) -> list[dict[str, object]]:
+    return [
+        {
+            "claim": claim.claim,
+            "status": claim.status,
+            "supporting_chunk_ids": claim.supporting_chunk_ids,
+            "reason": claim.reason,
+        }
+        for claim in verification.claim_verifications
+    ]

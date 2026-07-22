@@ -24,7 +24,32 @@ async def test_agent_run_store_appends_and_lists_runs(tmp_path) -> None:
             }
         ],
         trace=[
-            {"stage": "generate_answer", "answer_chars": 17, "debug_prompt": "internal"},
+            {
+                "stage": "generate_answer",
+                "answer_chars": 17,
+                "debug_prompt": "internal",
+                "latency_ms": 123.4,
+                "model": "gpt-test",
+                "input_tokens": 100,
+                "output_tokens": 25,
+                "total_tokens": 125,
+                "estimated_cost_usd": 0.001,
+            },
+            {
+                "stage": "execute_tool",
+                "tool_name": "web_search",
+                "success": True,
+                "latency_ms": 10.0,
+                "tool_estimated_cost_usd": 0.0005,
+                "estimated_cost_usd": 0.0005,
+            },
+            {
+                "stage": "observe",
+                "tool_name": "pdf_index",
+                "embedding_model": "text-embedding-test",
+                "embedding_tokens": 40,
+                "embedding_estimated_cost_usd": 0.002,
+            },
             {"stage": "verify_answer", "success": True},
         ],
     )
@@ -46,16 +71,82 @@ async def test_agent_run_store_appends_and_lists_runs(tmp_path) -> None:
         evidence_quality="high",
     )
     assert [event.model_dump(exclude_none=True) for event in record.trace] == [
-        {"stage": "generate_answer", "answer_chars": 17},
+        {
+            "stage": "generate_answer",
+            "answer_chars": 17,
+            "latency_ms": 123.4,
+            "model": "gpt-test",
+            "input_tokens": 100,
+            "output_tokens": 25,
+            "total_tokens": 125,
+            "estimated_cost_usd": 0.001,
+        },
+        {
+            "stage": "execute_tool",
+            "tool_name": "web_search",
+            "success": True,
+            "latency_ms": 10.0,
+            "tool_estimated_cost_usd": 0.0005,
+            "estimated_cost_usd": 0.0005,
+        },
+        {
+            "stage": "observe",
+            "tool_name": "pdf_index",
+            "embedding_model": "text-embedding-test",
+            "embedding_tokens": 40,
+            "embedding_estimated_cost_usd": 0.002,
+        },
         {"stage": "verify_answer", "success": True},
     ]
+    assert record.usage.latency_ms == pytest.approx(133.4)
+    assert record.usage.input_tokens == 100
+    assert record.usage.output_tokens == 25
+    assert record.usage.total_tokens == 125
+    assert record.usage.embedding_tokens == 40
+    assert record.usage.estimated_cost_usd == pytest.approx(0.0035)
+    assert record.usage.tool_call_count == 1
+    assert record.usage.models == ["gpt-test", "text-embedding-test"]
     path = tmp_path / "agent_runs" / "chat-1" / f"{record.run_id}.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["question"] == "What is the method?"
     assert payload["trace"] == [
-        {"stage": "generate_answer", "answer_chars": 17},
+        {
+            "stage": "generate_answer",
+            "answer_chars": 17,
+            "latency_ms": 123.4,
+            "model": "gpt-test",
+            "input_tokens": 100,
+            "output_tokens": 25,
+            "total_tokens": 125,
+            "estimated_cost_usd": 0.001,
+        },
+        {
+            "stage": "execute_tool",
+            "tool_name": "web_search",
+            "success": True,
+            "latency_ms": 10.0,
+            "tool_estimated_cost_usd": 0.0005,
+            "estimated_cost_usd": 0.0005,
+        },
+        {
+            "stage": "observe",
+            "tool_name": "pdf_index",
+            "embedding_model": "text-embedding-test",
+            "embedding_tokens": 40,
+            "embedding_estimated_cost_usd": 0.002,
+        },
         {"stage": "verify_answer", "success": True},
     ]
+    assert payload["usage"] == {
+        "latency_ms": 133.4,
+        "input_tokens": 100,
+        "output_tokens": 25,
+        "total_tokens": 125,
+        "embedding_tokens": 40,
+        "estimated_cost_usd": 0.0035,
+        "tool_call_count": 1,
+        "models": ["gpt-test", "text-embedding-test"],
+    }
     assert payload["findings"][0]["summary"] == "It uses planning."
 
 

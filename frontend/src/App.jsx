@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { listDownloadedPdfs, uploadLocalPdfs } from "./api.js";
-import ChatPage from "./pages/ChatPage.jsx";
-import HomePage from "./pages/HomePage.jsx";
-import PaperDetailPage from "./pages/PaperDetailPage.jsx";
+
+const ChatPage = lazy(() => import("./pages/ChatPage.jsx"));
+const HomePage = lazy(() => import("./pages/HomePage.jsx"));
+const PaperDetailPage = lazy(() => import("./pages/PaperDetailPage.jsx"));
 
 export default function App() {
   const [view, setView] = useState("home");
@@ -74,29 +75,45 @@ export default function App() {
   }
 
   if (view === "chat") {
-    return <ChatPage initialPaper={chatInitialPaper} onBackHome={goHome} />;
+    return (
+      <Suspense fallback={<RouteLoading />}>
+        <ChatPage initialPaper={chatInitialPaper} onBackHome={goHome} />
+      </Suspense>
+    );
   }
 
   if (view === "paper" && selectedPaper) {
     return (
-      <PaperDetailPage
-        onBack={goHome}
-        onChatWithPaper={chatWithPaper}
-        paper={selectedPaper}
-      />
+      <Suspense fallback={<RouteLoading />}>
+        <PaperDetailPage
+          onBack={goHome}
+          onChatWithPaper={chatWithPaper}
+          paper={selectedPaper}
+        />
+      </Suspense>
     );
   }
 
   return (
-    <HomePage
-      error={listState.error}
-      loading={listState.loading}
-      onOpenPaper={openPaper}
-      onRefresh={refreshPapers}
-      onStartChat={startChat}
-      onUpload={handleUpload}
-      papers={papers}
-      uploadState={uploadState}
-    />
+    <Suspense fallback={<RouteLoading />}>
+      <HomePage
+        error={listState.error}
+        loading={listState.loading}
+        onOpenPaper={openPaper}
+        onRefresh={refreshPapers}
+        onStartChat={startChat}
+        onUpload={handleUpload}
+        papers={papers}
+        uploadState={uploadState}
+      />
+    </Suspense>
+  );
+}
+
+function RouteLoading() {
+  return (
+    <div className="route-loading" role="status" aria-live="polite">
+      Đang tải
+    </div>
   );
 }

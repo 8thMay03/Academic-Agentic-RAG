@@ -1,5 +1,6 @@
 import pytest
 
+from app.services.embedding_service import EmbeddingUsage
 from app.services.retriever_service import RetrieverService
 
 
@@ -7,6 +8,7 @@ class FakeVectorStore:
     def __init__(self) -> None:
         self.vector_call = None
         self.keyword_call = None
+        self.last_embedding_usage = None
 
     async def similarity_search(
         self,
@@ -21,6 +23,12 @@ class FakeVectorStore:
             "score_threshold": score_threshold,
             "paper_ids": paper_ids,
         }
+        self.last_embedding_usage = EmbeddingUsage(
+            model="text-embedding-test",
+            input_count=1,
+            total_tokens=7,
+            estimated_cost_usd=0.0001,
+        )
         return [
             {
                 "id": "chunk-vector",
@@ -223,6 +231,7 @@ async def test_retriever_service_merges_vector_and_keyword_results_before_rerank
         "score_threshold": None,
         "paper_ids": ["paper-1"],
     }
+    assert service.last_embedding_usage == vector_store.last_embedding_usage
     assert reranker.query == "agentic rag"
     assert {chunk["id"] for chunk in reranker.chunks} == {"chunk-keyword", "chunk-shared"}
     assert results == sorted(results, key=lambda chunk: chunk["id"])

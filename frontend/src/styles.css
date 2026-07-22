@@ -35,6 +35,14 @@ body {
   min-height: 100vh;
 }
 
+.route-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
 button,
 input,
 textarea {
@@ -952,6 +960,21 @@ code {
   font-weight: 700;
 }
 
+.agent-run-outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .agent-live-dot {
   width: 8px;
   height: 8px;
@@ -1242,6 +1265,99 @@ code {
 .badge-low {
   background: #fde8e8;
   color: #7f1d1d;
+}
+
+.claim-map {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.claim-map-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.claim-map-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.claim-map-item {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--field);
+}
+
+.claim-map-claim {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.claim-map-supported .claim-map-claim svg {
+  color: #1f4d2c;
+}
+
+.claim-map-contradicted .claim-map-claim svg {
+  color: #7f1d1d;
+}
+
+.claim-map-insufficient .claim-map-claim svg,
+.claim-map-unknown .claim-map-claim svg {
+  color: #7a4f00;
+}
+
+.claim-map-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.claim-map-status {
+  font-weight: 700;
+}
+
+.claim-map-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.claim-map-source {
+  max-width: 100%;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--sage);
+  font-size: 0.76rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.claim-map-source:hover {
+  border-color: rgba(47, 111, 100, 0.42);
 }
 
 /* Composer */
@@ -1563,6 +1679,22 @@ code {
 .agent-run-meta {
   color: var(--text-muted);
   font-size: 0.78rem;
+}
+
+.agent-run-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.agent-run-usage span {
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
 }
 
 .agent-run-answer {

@@ -9,6 +9,10 @@ WEB_CHUNK_OVERLAP = 180
 
 class WebSearchTool:
     name = "web_search"
+    description = "Search the web and convert result snippets or raw content into temporary cited chunks."
+    input_schema = {"query": "string", "max_results": "integer"}
+    when_to_use = "Use when local context is insufficient or current web information is required."
+    failure_modes = ["missing_tavily_api_key", "empty_results", "tool_timeout", "untrusted_web_content"]
 
     def __init__(self, web_search_service: WebSearchService) -> None:
         self._web_search_service = web_search_service

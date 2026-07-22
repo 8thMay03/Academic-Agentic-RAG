@@ -7,6 +7,10 @@ from app.services.pdf_service import PDFService
 
 class PDFDownloadTool:
     name = "pdf_download"
+    description = "Download a PDF artifact discovered by a previous search step."
+    input_schema = {"pdf_url": "string", "source_metadata": "dict", "destination": "string|null"}
+    when_to_use = "Use after arxiv_search or web discovery provides a trusted PDF URL."
+    failure_modes = ["missing_pdf_url", "download_failed", "non_pdf_content", "tool_timeout"]
 
     def __init__(self, pdf_service: PDFService, default_destination_dir: str | Path | None = None) -> None:
         self._pdf_service = pdf_service

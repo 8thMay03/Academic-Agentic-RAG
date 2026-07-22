@@ -1,0 +1,3 @@
+%PDF-1.4
+% Fixture PDF placeholder for integration tests.
+% Text extraction is monkeypatched in tests so this file only needs to be a stable PDF-like artifact.

@@ -1,5 +1,6 @@
 import pytest
 
+from app.config import settings as settings_module
 from app.agent.models import ContextQuality, ToolResult
 from app.agent.tools.registry import ToolRegistry
 from app.models.chat import ChatHistoryMessage
@@ -64,6 +65,18 @@ class FakeWebSearchService:
     async def search(self, query: str, max_results: int = 5) -> WebSearchResult:
         self.calls.append({"query": query, "max_results": max_results})
         return WebSearchResult(sources=self.sources)
+
+
+def test_workflow_uses_llm_verifier_when_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(settings_module.settings, "ENABLE_LLM_VERIFIER", True)
+
+    workflow = AgenticChatWorkflow(
+        FakeRAGService([]),
+        FakeLLMService("unused"),
+        FakeWebSearchService(),
+    )
+
+    assert workflow._answer_verifier._async_claim_judge is not None
 
 
 class SufficientQualityEvaluator:
@@ -198,13 +211,16 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
         "observe",
         "execute_tool",
         "observe",
+        "execute_tool",
+        "observe",
         "draft_answer",
     ]
     assert result.trace[0]["intent"] == "research_qa"
     assert _trace_event(result.trace, "quality_gate")["sufficient"] is False
-    assert _trace_event(result.trace, "plan")["step_count"] == 2
-    assert _trace_event(result.trace, "execute_tool", 0)["tool_name"] == "web_search"
-    assert _trace_event(result.trace, "execute_tool", 1)["tool_name"] == "web_snippet_ingest"
+    assert _trace_event(result.trace, "plan")["step_count"] == 3
+    assert _trace_event(result.trace, "execute_tool", 0)["tool_name"] == "local_retrieve"
+    assert _trace_event(result.trace, "execute_tool", 1)["tool_name"] == "web_search"
+    assert _trace_event(result.trace, "execute_tool", 2)["tool_name"] == "web_snippet_ingest"
     assert rag.calls == [
         {
             "question": "What is the method?",
@@ -213,7 +229,15 @@ async def test_chat_service_returns_i_do_not_know_when_context_is_missing() -> N
             "top_k": 3,
             "score_threshold": 0.7,
             "chat_history": None,
-        }
+        },
+        {
+            "question": "What is the method?",
+            "chat_id": None,
+            "paper_ids": None,
+            "top_k": 6,
+            "score_threshold": pytest.approx(0.5),
+            "chat_history": None,
+        },
     ]
 
 
@@ -245,8 +269,9 @@ async def test_chat_service_falls_back_to_web_when_local_context_is_missing() ->
     assert result.citations[0].evidence_quality == "web"
     assert _trace_event(result.trace, "query_planning")["query_type"] == "comparison"
     assert _trace_event(result.trace, "quality_gate")["reason"] == "no_local_context"
-    assert _trace_event(result.trace, "execute_tool", 0)["tool_name"] == "web_search"
-    assert _trace_event(result.trace, "observe", 0)["chunk_count"] == 1
+    assert _trace_event(result.trace, "execute_tool", 0)["tool_name"] == "local_retrieve"
+    assert _trace_event(result.trace, "execute_tool", 1)["tool_name"] == "web_search"
+    assert _trace_event(result.trace, "observe", 1)["chunk_count"] == 1
     assert "Agentic RAG uses agent planning" in llm.prompts[0]
 
 
@@ -255,7 +280,7 @@ async def test_chat_workflow_ingests_fresh_research_for_latest_questions() -> No
     fresh_chunk = {
         **RETRIEVED_CHUNK,
         "id": "fresh-paper:p2:c0",
-        "text": "A 2026 survey discusses the latest Agentic RAG systems.",
+        "text": "A 2026 survey discusses the latest Agentic RAG systems with reflection loops.",
         "metadata": {
             **RETRIEVED_CHUNK["metadata"],
             "paper_id": "fresh-paper",
@@ -272,7 +297,7 @@ async def test_chat_workflow_ingests_fresh_research_for_latest_questions() -> No
             "paper_id": "fresh-paper",
             "title": "Latest Agentic RAG survey",
             "chunk_id": "fresh-paper:p2:c0",
-            "text": "A 2026 survey discusses the latest Agentic RAG systems.",
+            "text": "A 2026 survey discusses the latest Agentic RAG systems with reflection loops.",
         },
     }
     local_tool = SequenceLocalRetrieveTool(
@@ -587,18 +612,21 @@ async def test_chat_workflow_retrieves_more_when_verifier_requests_more_evidence
     assert result.answer == "Recovered web evidence explains verification [1]."
     assert [citation.chunk_id for citation in result.citations] == ["web:1"]
     assert web.calls == [{"query": "How does Agentic RAG verify evidence?", "max_results": 5}]
-    assert [event["stage"] for event in result.trace[-5:]] == [
+    assert [event["stage"] for event in result.trace[-6:]] == [
         "execute_tool",
         "observe",
+        "quality_gate",
         "draft_answer",
         "generate_answer",
         "verify_answer",
     ]
-    assert result.trace[-7]["stage"] == "verify_answer"
-    assert result.trace[-7]["suggested_action"] == "retrieve_more"
-    assert result.trace[-6]["stage"] == "plan"
-    assert result.trace[-6]["status"] == "recovery"
-    assert result.trace[-5]["tool_name"] == "web_search"
+    assert result.trace[-8]["stage"] == "verify_answer"
+    assert result.trace[-8]["suggested_action"] == "retrieve_more"
+    assert result.trace[-7]["stage"] == "plan"
+    assert result.trace[-7]["status"] == "recovery"
+    assert result.trace[-6]["tool_name"] == "web_search"
+    assert result.trace[-4]["stage"] == "quality_gate"
+    assert result.trace[-4]["reason"] == "external_context_available"
     assert result.trace[-1]["suggested_action"] == "finalize"
 
 
@@ -665,11 +693,13 @@ async def test_chat_workflow_retrieves_more_when_model_answers_unknown_despite_e
 
     assert result.answer == "GRU uses fewer gates than LSTM [1]."
     assert web.calls == [{"query": "mô hình GRU khác gì so với LSTM", "max_results": 5}]
-    assert result.trace[-7]["stage"] == "verify_answer"
-    assert result.trace[-7]["suggested_action"] == "retrieve_more"
-    assert result.trace[-7]["issue_count"] == 1
-    assert result.trace[-6]["stage"] == "plan"
-    assert result.trace[-6]["status"] == "recovery"
+    assert result.trace[-8]["stage"] == "verify_answer"
+    assert result.trace[-8]["suggested_action"] == "retrieve_more"
+    assert result.trace[-8]["issue_count"] == 1
+    assert result.trace[-7]["stage"] == "plan"
+    assert result.trace[-7]["status"] == "recovery"
+    assert result.trace[-4]["stage"] == "quality_gate"
+    assert result.trace[-4]["reason"] == "external_context_available"
 
 
 @pytest.mark.asyncio

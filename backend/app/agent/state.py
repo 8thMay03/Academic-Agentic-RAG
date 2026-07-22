@@ -5,8 +5,10 @@ from app.agent.models import (
     AgentTraceEvent,
     ChatWorkflowRequest,
     ContextQuality,
+    PlannerDecision,
     QueryPlan,
     ResearchPlan,
+    StopReason,
     ToolCall,
     ToolResult,
     RetrievedChunk,
@@ -41,3 +43,5 @@ class AgenticRAGState(TypedDict, total=False):
     tool_results: list[ToolResult]
     limits: AgentLimits
     refreshed_local_context: bool
+    stop_reason: StopReason
+    planner_decision: PlannerDecision

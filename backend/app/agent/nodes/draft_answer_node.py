@@ -1,4 +1,5 @@
 from app.agent.models import append_trace
+from app.agent.security import mark_suspicious_chunks
 from app.agent.state import AgenticRAGState
 
 
@@ -27,13 +28,24 @@ async def draft_answer_node(state: AgenticRAGState) -> AgenticRAGState:
             "trace": trace,
         }
 
+    chunks = mark_suspicious_chunks(chunks)
+    suspicious_context_count = sum(
+        1
+        for chunk in chunks
+        if (chunk.get("metadata") or {}).get("security_flag") == "suspicious_instruction"
+    )
     citations = citation_grounder.build_citations(chunks, request.question)
+    trace_fields = {
+        "status": "ready",
+        "context_count": len(chunks),
+        "citation_count": len(citations),
+    }
+    if suspicious_context_count:
+        trace_fields["suspicious_context_count"] = suspicious_context_count
     trace = append_trace(
         state.get("trace", []),
         "draft_answer",
-        status="ready",
-        context_count=len(chunks),
-        citation_count=len(citations),
+        **trace_fields,
     )
     return {
         **state,

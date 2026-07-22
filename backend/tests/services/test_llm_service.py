@@ -17,7 +17,10 @@ class FakeCompletionsClient:
         self.temperature = temperature
         if stream:
             return self._stream_response()
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Grounded answer."))])
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="Grounded answer."))],
+            usage=SimpleNamespace(prompt_tokens=100, completion_tokens=25, total_tokens=125),
+        )
 
     async def _stream_response(self):
         for token in ["Hello", " world"]:
@@ -48,6 +51,11 @@ async def test_llm_service_completes_prompt_with_openai_client() -> None:
         "content": "Answer from retrieved context.",
     }
     assert client.chat.completions.temperature == 0.2
+    assert service.last_usage is not None
+    assert service.last_usage.model == "gpt-test"
+    assert service.last_usage.input_tokens == 100
+    assert service.last_usage.output_tokens == 25
+    assert service.last_usage.total_tokens == 125
 
 
 @pytest.mark.asyncio

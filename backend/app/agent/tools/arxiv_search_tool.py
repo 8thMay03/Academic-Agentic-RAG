@@ -4,6 +4,10 @@ from app.services.search_arxiv_service import SearchArxivService
 
 class ArxivSearchTool:
     name = "arxiv_search"
+    description = "Search arXiv for recent or relevant research papers and return paper artifacts with PDF URLs."
+    input_schema = {"query": "string", "max_results": "integer", "sort_by": "string"}
+    when_to_use = "Use for fresh academic research questions, especially latest/current/SOTA paper requests."
+    failure_modes = ["empty_arxiv_results", "missing_pdf_url", "arxiv_client_error"]
 
     def __init__(self, search_arxiv_service: SearchArxivService) -> None:
         self._search_arxiv_service = search_arxiv_service

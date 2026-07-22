@@ -1,4 +1,5 @@
 from app.models.chunk import Chunk
+from app.services.embedding_service import EmbeddingUsage
 from app.vectorstore.indexing import chunks_to_documents, index_chunks
 
 
@@ -29,6 +30,12 @@ class FakeVectorStore:
     def __init__(self) -> None:
         self.documents = None
         self.metadatas = None
+        self.last_embedding_usage = EmbeddingUsage(
+            model="text-embedding-test",
+            input_count=1,
+            total_tokens=3,
+            estimated_cost_usd=0.001,
+        )
 
     async def add_documents(self, documents: list[str], metadatas: list[dict]) -> None:
         self.documents = documents
@@ -44,7 +51,7 @@ async def test_index_chunks_adds_chunks_to_vector_store() -> None:
     )
     vector_store = FakeVectorStore()
 
-    await index_chunks([chunk], vector_store)
+    usage = await index_chunks([chunk], vector_store)
 
     assert vector_store.documents == ["Chunk text"]
     assert vector_store.metadatas == [
@@ -55,3 +62,4 @@ async def test_index_chunks_adds_chunks_to_vector_store() -> None:
             "page": "1",
         }
     ]
+    assert usage == vector_store.last_embedding_usage

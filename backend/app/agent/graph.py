@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph import END, StateGraph
 
-from app.agent.models import ChatWorkflowResult
+from app.agent.models import ChatWorkflowResult, StopReason
 from app.agent.nodes.classify_intent_node import classify_intent_node
 from app.agent.nodes.draft_answer_node import draft_answer_node
 from app.agent.nodes.generate_answer_node import generate_answer_node
@@ -46,10 +46,12 @@ async def run_verified_agentic_rag_workflow(
     final_state = await invoke_agentic_rag_graph(workflow, request)
     answer = final_state.get("answer") or UNKNOWN_ANSWER
     citations = final_state.get("citations", []) if final_state.get("answer") else []
+    stop_reason = infer_stop_reason(final_state, answer)
     return ChatWorkflowResult(
         answer=answer,
         citations=citations,
         trace=final_state.get("trace", []),
+        stop_reason=stop_reason,
     )
 
 
@@ -69,12 +71,14 @@ async def stream_verified_agentic_rag_workflow(
 
     answer = final_state.get("answer") or UNKNOWN_ANSWER
     citations = final_state.get("citations", []) if final_state.get("answer") else []
+    stop_reason = infer_stop_reason(final_state, answer)
     yield {
         "type": "result",
         "result": ChatWorkflowResult(
             answer=answer,
             citations=citations,
             trace=final_state.get("trace", []),
+            stop_reason=stop_reason,
         ),
     }
 
@@ -124,6 +128,7 @@ def build_agentic_rag_graph():
         route_after_observation,
         {
             "execute_tool": "execute_tool",
+            "quality_gate": "quality_gate",
             "draft_answer": "draft_answer",
         },
     )
@@ -151,7 +156,14 @@ def build_agentic_rag_graph():
             "end": END,
         },
     )
-    graph.add_edge("plan_recovery", "execute_tool")
+    graph.add_conditional_edges(
+        "plan_recovery",
+        route_after_planning,
+        {
+            "execute_tool": "execute_tool",
+            "draft_answer": "draft_answer",
+        },
+    )
 
     return graph.compile()
 
@@ -167,10 +179,10 @@ def route_after_planning(state: AgenticRAGState) -> str:
 
 
 def route_after_observation(state: AgenticRAGState) -> str:
-    if _observation_has_answerable_local_evidence(state):
-        return "draft_answer"
     plan = state["plan"]
     current_step_index = state.get("current_step_index", 0)
+    if _observation_should_regrade_context(state):
+        return "quality_gate"
     return "execute_tool" if current_step_index < len(plan.steps) else "draft_answer"
 
 
@@ -187,6 +199,31 @@ def route_after_verify_answer(state: AgenticRAGState) -> str:
     if not verification or verification.suggested_action != "retrieve_more":
         return "end"
     return "plan_recovery" if _can_retrieve_more(state) else "end"
+
+
+def infer_stop_reason(state: AgenticRAGState, answer: str | None = None) -> StopReason:
+    trace = state.get("trace", [])
+    verification = state.get("verification")
+    if verification and _answered_unknown(answer) and verification.suggested_action in {"answer_unknown", "retrieve_more", "revise_answer"}:
+        return "verification_failed_answer_unknown"
+
+    limit_reason = _latest_limit_reason(trace)
+    if limit_reason:
+        return limit_reason
+
+    if _answered_unknown(answer):
+        request = state["request"]
+        quality = state.get("quality")
+        plan = state.get("plan")
+        if quality and not quality.sufficient and not request.enable_web_search:
+            return "web_search_disabled"
+        if plan is not None and not plan.steps:
+            return "planner_no_valid_steps"
+        return "no_context_available"
+
+    if any(event["stage"] == "execute_tool" for event in trace):
+        return "answered_after_recovery"
+    return "answered_with_sufficient_context"
 
 
 def _can_retrieve_more(state: AgenticRAGState) -> bool:
@@ -208,6 +245,22 @@ def _can_retrieve_more(state: AgenticRAGState) -> bool:
     return web_search_count < max_web_searches
 
 
+def _latest_limit_reason(trace: list[dict]) -> StopReason | None:
+    for event in reversed(trace):
+        if event.get("stage") != "execute_tool":
+            continue
+        reason = str(event.get("reason") or "")
+        if reason.startswith("Agent step limit reached"):
+            return "step_limit_reached"
+        if reason.startswith("Tool limit reached"):
+            return "tool_limit_reached"
+    return None
+
+
+def _answered_unknown(answer: str | None) -> bool:
+    return not answer or answer.strip() == UNKNOWN_ANSWER
+
+
 def _observation_has_answerable_local_evidence(state: AgenticRAGState) -> bool:
     result = state.get("current_tool_result")
     quality = state.get("quality")
@@ -219,3 +272,14 @@ def _observation_has_answerable_local_evidence(state: AgenticRAGState) -> bool:
         and result.tool_name == "local_retrieve"
         and result.chunks
     )
+
+
+def _observation_should_regrade_context(state: AgenticRAGState) -> bool:
+    result = state.get("current_tool_result")
+    if not result or not result.success or not result.chunks:
+        return False
+    if result.tool_name == "local_retrieve":
+        return True
+    plan = state["plan"]
+    current_step_index = state.get("current_step_index", 0)
+    return current_step_index >= len(plan.steps)

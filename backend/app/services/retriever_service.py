@@ -1,4 +1,5 @@
 from app.config.settings import settings
+from app.services.embedding_service import EmbeddingUsage
 from app.services.reranker_service import RerankerService
 from app.vectorstore.bm25 import tokenize
 from app.vectorstore.chroma import ChromaVectorStore
@@ -44,6 +45,7 @@ class RetrieverService:
             if candidate_multiplier is not None
             else settings.RETRIEVAL_CANDIDATE_MULTIPLIER
         )
+        self.last_embedding_usage: EmbeddingUsage | None = None
 
     async def retrieve(
         self,
@@ -65,6 +67,7 @@ class RetrieverService:
             score_threshold=None,
             paper_ids=paper_ids,
         )
+        self.last_embedding_usage = getattr(self._vector_store, "last_embedding_usage", None)
         keyword_results = await self._vector_store.keyword_search(
             query,
             top_k=candidate_count,

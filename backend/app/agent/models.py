@@ -4,6 +4,17 @@ from typing import Any, Literal, NotRequired, TypedDict
 from app.models.chat import ChatHistoryMessage
 from app.models.citation import Citation
 
+StopReason = Literal[
+    "answered_with_sufficient_context",
+    "answered_after_recovery",
+    "no_context_available",
+    "web_search_disabled",
+    "step_limit_reached",
+    "tool_limit_reached",
+    "verification_failed_answer_unknown",
+    "planner_no_valid_steps",
+]
+
 
 @dataclass(frozen=True)
 class ChatWorkflowRequest:
@@ -24,6 +35,7 @@ class ChatWorkflowResult:
     answer: str
     citations: list[Citation]
     trace: list["AgentTraceEvent"] = field(default_factory=list)
+    stop_reason: StopReason | None = None
 
 
 @dataclass(frozen=True)
@@ -73,11 +85,37 @@ class ResearchPlan:
 
 
 @dataclass(frozen=True)
+class ToolDescription:
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+    when_to_use: str
+    failure_modes: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class PlannerDecision:
+    goal: str
+    intent: str
+    needs_fresh_context: bool
+    can_answer_from_local_context: bool
+    selected_tools: list[str]
+    steps: list[ResearchPlanStep]
+    stop_condition: str
+    risk_notes: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class QueryPlan:
     original_query: str
     query_type: Literal["simple_lookup", "comparison", "multi_aspect", "paper_review"]
     search_queries: list[str]
     reason: str
+    retrieval_mode: Literal["focused", "comparative", "expanded", "paper_review"] = "focused"
+    per_query_top_k: int | None = None
+    score_threshold: float | None = None
+    max_total_chunks: int | None = None
+    retrieval_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -91,6 +129,14 @@ class AgentLimits:
 
 
 @dataclass(frozen=True)
+class ClaimVerification:
+    claim: str
+    status: Literal["supported", "contradicted", "insufficient"]
+    supporting_chunk_ids: list[str]
+    reason: str
+
+
+@dataclass(frozen=True)
 class VerificationResult:
     passed: bool
     answer: str
@@ -98,6 +144,7 @@ class VerificationResult:
     issues: list[str]
     unsupported_claims: list[str]
     suggested_action: Literal["finalize", "retrieve_more", "revise_answer", "answer_unknown"]
+    claim_verifications: list[ClaimVerification] = field(default_factory=list)
 
 
 class RetrievedChunk(TypedDict, total=False):
@@ -244,12 +291,34 @@ class AgentTraceEvent(TypedDict):
     ingestion_status: NotRequired[str]
     issue_count: NotRequired[int]
     unsupported_claim_count: NotRequired[int]
+    supported_claim_count: NotRequired[int]
+    contradicted_claim_count: NotRequired[int]
+    insufficient_claim_count: NotRequired[int]
+    claim_citation_map: NotRequired[list[dict[str, Any]]]
     suggested_action: NotRequired[str]
     answer_chars: NotRequired[int]
     tool_result: NotRequired[dict[str, Any]]
     query_type: NotRequired[str]
     query_count: NotRequired[int]
     queries: NotRequired[list[str]]
+    stop_reason: NotRequired[StopReason]
+    selected_tools: NotRequired[list[str]]
+    stop_condition: NotRequired[str]
+    risk_notes: NotRequired[list[str]]
+    available_tools: NotRequired[list[str]]
+    planner_source: NotRequired[str]
+    latency_ms: NotRequired[float]
+    model: NotRequired[str]
+    input_tokens: NotRequired[int]
+    output_tokens: NotRequired[int]
+    total_tokens: NotRequired[int]
+    estimated_cost_usd: NotRequired[float]
+    tool_estimated_cost_usd: NotRequired[float]
+    embedding_model: NotRequired[str]
+    embedding_input_count: NotRequired[int]
+    embedding_tokens: NotRequired[int]
+    embedding_estimated_cost_usd: NotRequired[float]
+    suspicious_context_count: NotRequired[int]
 
 
 def trace_event(stage: str, **fields: Any) -> AgentTraceEvent:

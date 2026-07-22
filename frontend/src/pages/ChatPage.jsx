@@ -278,6 +278,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
       content: "",
       citations: [],
       trace: [],
+      stop_reason: null,
       created_at: new Date(Date.now() + 1).toISOString(),
       streaming: true,
     };
@@ -302,7 +303,7 @@ export default function ChatPage({ onBackHome, initialPaper }) {
         }
       }
 
-      await streamChatWithPaper({
+      const { stopReason } = await streamChatWithPaper({
         question: trimmedQuestion,
         chatId,
         paperIds: activeChat.sources.length ? activeChat.sources.map((source) => source.paper_id) : undefined,
@@ -351,6 +352,17 @@ export default function ChatPage({ onBackHome, initialPaper }) {
             };
           });
         },
+      });
+      setActiveChat((chat) => {
+        if (!chat || chat.chat_id !== chatId) return chat;
+        return {
+          ...chat,
+          messages: chat.messages.map((message) =>
+            message.created_at === optimisticAssistant.created_at
+              ? { ...message, stop_reason: stopReason, streaming: false }
+              : message,
+          ),
+        };
       });
       const session = await getChatSession(chatId);
       setActiveChat((chat) => (chat?.chat_id === chatId ? session : chat));

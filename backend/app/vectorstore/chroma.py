@@ -3,8 +3,8 @@ from pathlib import Path
 import chromadb
 
 from app.config.settings import settings
-from app.services.embedding_service import EmbeddingService
-from app.vectorstore.bm25 import BM25Scorer
+from app.services.embedding_service import EmbeddingService, EmbeddingUsage
+from app.vectorstore.keyword_index import PersistentKeywordIndex
 
 
 class ChromaVectorStore:
@@ -14,12 +14,17 @@ class ChromaVectorStore:
         collection_name: str = "research_chunks",
         embedding_service: EmbeddingService | None = None,
         client: chromadb.ClientAPI | None = None,
+        keyword_index: PersistentKeywordIndex | None = None,
     ) -> None:
         self._persist_dir = Path(persist_dir or settings.CHROMA_DIR)
         self._collection_name = collection_name
         self._embedding_service = embedding_service or EmbeddingService()
         self._client = client or chromadb.PersistentClient(path=str(self._persist_dir))
         self._collection = self._client.get_or_create_collection(name=self._collection_name)
+        self._keyword_index = keyword_index or PersistentKeywordIndex(
+            self._persist_dir / f"{self._collection_name}_keyword_index.json"
+        )
+        self.last_embedding_usage: EmbeddingUsage | None = None
 
     async def add_documents(self, documents: list[str], metadatas: list[dict]) -> None:
         if not documents:
@@ -28,6 +33,7 @@ class ChromaVectorStore:
             raise ValueError("documents and metadatas must have the same length")
 
         embeddings = await self._embedding_service.embed_texts(documents)
+        self.last_embedding_usage = getattr(self._embedding_service, "last_usage", None)
         ids = [self._document_id(index, metadata) for index, metadata in enumerate(metadatas)]
         self._collection.upsert(
             ids=ids,
@@ -35,6 +41,7 @@ class ChromaVectorStore:
             metadatas=metadatas,
             embeddings=embeddings,
         )
+        self._keyword_index.upsert(documents, metadatas, ids)
 
     async def similarity_search(
         self,
@@ -49,6 +56,7 @@ class ChromaVectorStore:
             raise ValueError("score_threshold must be between 0 and 1")
 
         query_embedding = await self._embedding_service.embed_query(query)
+        self.last_embedding_usage = getattr(self._embedding_service, "last_usage", None)
         results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
@@ -72,23 +80,12 @@ class ChromaVectorStore:
         if score_threshold is not None and not 0 <= score_threshold <= 1:
             raise ValueError("score_threshold must be between 0 and 1")
 
-        results = self._collection.get(
-            where=self._paper_filter(paper_ids),
-            include=["documents", "metadatas"],
+        return self._keyword_index.search(
+            query,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            paper_ids=paper_ids,
         )
-        formatted_results = self._format_get_results(results)
-        scorer = BM25Scorer([result["text"] for result in formatted_results])
-        ranked_results = []
-
-        for document_index, score in scorer.rank(query, top_k):
-            result = dict(formatted_results[document_index])
-            result["score"] = score
-            result["keyword_score"] = score
-            ranked_results.append(result)
-
-        if score_threshold is None:
-            return ranked_results
-        return [result for result in ranked_results if result["score"] >= score_threshold]
 
     @staticmethod
     def _document_id(index: int, metadata: dict) -> str:

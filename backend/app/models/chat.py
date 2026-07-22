@@ -53,18 +53,41 @@ class AgentTraceEventResponse(BaseModel):
     ingestion_status: str | None = None
     issue_count: int | None = None
     unsupported_claim_count: int | None = None
+    supported_claim_count: int | None = None
+    contradicted_claim_count: int | None = None
+    insufficient_claim_count: int | None = None
+    claim_citation_map: list[dict[str, Any]] | None = None
     suggested_action: str | None = None
     answer_chars: int | None = None
     tool_result: dict[str, Any] | None = None
     query_type: str | None = None
     query_count: int | None = None
     queries: list[str] | None = None
+    stop_reason: str | None = None
+    selected_tools: list[str] | None = None
+    stop_condition: str | None = None
+    risk_notes: list[str] | None = None
+    available_tools: list[str] | None = None
+    planner_source: str | None = None
+    latency_ms: float | None = None
+    model: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    estimated_cost_usd: float | None = None
+    tool_estimated_cost_usd: float | None = None
+    embedding_model: str | None = None
+    embedding_input_count: int | None = None
+    embedding_tokens: int | None = None
+    embedding_estimated_cost_usd: float | None = None
+    suspicious_context_count: int | None = None
 
 
 class ChatResponse(BaseModel):
     answer: str
     citations: list[Citation]
     trace: list[AgentTraceEventResponse] = Field(default_factory=list)
+    stop_reason: str | None = None
 
 
 def agent_trace_event_payload(event: Mapping[str, Any]) -> dict[str, Any]:
@@ -80,6 +103,7 @@ class ChatHistoryMessage(BaseModel):
     content: str
     citations: list[Citation] = Field(default_factory=list)
     trace: list[AgentTraceEventResponse] = Field(default_factory=list)
+    stop_reason: str | None = None
     created_at: str
 
 
@@ -145,6 +169,17 @@ class ResearchFindingListResponse(BaseModel):
     findings: list[ResearchFinding] = Field(default_factory=list)
 
 
+class AgentRunUsageSummary(BaseModel):
+    latency_ms: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    embedding_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    tool_call_count: int = 0
+    models: list[str] = Field(default_factory=list)
+
+
 class AgentRunRecord(BaseModel):
     run_id: str
     chat_id: str
@@ -152,6 +187,8 @@ class AgentRunRecord(BaseModel):
     answer: str
     citations: list[Citation] = Field(default_factory=list)
     trace: list[AgentTraceEventResponse] = Field(default_factory=list)
+    stop_reason: str | None = None
+    usage: AgentRunUsageSummary = Field(default_factory=AgentRunUsageSummary)
     findings: list[ResearchFinding] = Field(default_factory=list)
     created_at: str
 

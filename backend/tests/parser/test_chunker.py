@@ -1,7 +1,7 @@
 import pytest
 
 from app.parser.cleaner import PAGE_BREAK
-from app.parser.chunker import chunk_text, chunk_text_with_metadata
+from app.parser.chunker import chunk_text, chunk_text_with_metadata, detect_section_heading
 
 
 def test_chunk_text_splits_text() -> None:
@@ -61,3 +61,27 @@ def test_chunk_text_with_metadata_stores_chunk_id_and_page_number() -> None:
         "chunk_index": "0",
     }
 
+
+def test_detect_section_heading_handles_numbered_academic_headings() -> None:
+    assert detect_section_heading("2. Methods") == ("2. Methods", "method")
+    assert detect_section_heading("Limitations") == ("Limitations", "limitations")
+    assert detect_section_heading("This is ordinary paragraph text.") is None
+
+
+def test_chunk_text_with_metadata_tracks_section_metadata_across_pages() -> None:
+    text = PAGE_BREAK.join(
+        [
+            "Abstract\nThis paper studies agentic retrieval.",
+            "2. Methods\nWe retrieve, grade, and verify evidence.",
+            "Additional method details continue here.",
+        ]
+    )
+
+    chunks = chunk_text_with_metadata(text, paper_id="paper-1", chunk_size=200, overlap=0)
+
+    assert chunks[0].metadata["section_title"] == "Abstract"
+    assert chunks[0].metadata["section_type"] == "abstract"
+    assert chunks[1].metadata["section_title"] == "2. Methods"
+    assert chunks[1].metadata["section_type"] == "method"
+    assert chunks[2].metadata["section_title"] == "2. Methods"
+    assert chunks[2].metadata["section_type"] == "method"
