@@ -27,12 +27,7 @@ export default function ChatMessages({ activeChat, canChat, chatState, onOpenCit
         <div className="welcome-icon">
           <Bot size={24} aria-hidden="true" />
         </div>
-        <h2>Hỏi về paper của bạn</h2>
-        <p>
-          {canChat
-            ? "AI sẽ truy xuất toàn bộ tài liệu local, rồi dùng web nếu local context chưa đủ."
-            : "Tạo cuộc trò chuyện để bắt đầu hỏi AI."}
-        </p>
+        <h2>Nhập câu hỏi của bạn</h2>
         {sourceState.error ? <div className="banner banner-error">{sourceState.error}</div> : null}
         {sourceState.message ? <div className="banner banner-success">{sourceState.message}</div> : null}
       </div>
