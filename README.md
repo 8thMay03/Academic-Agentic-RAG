@@ -1,12 +1,41 @@
 # AI Research Assistant
 
-AI Research Assistant là một ứng dụng Agentic RAG dùng để đọc paper PDF, trả lời câu hỏi nghiên cứu có trích dẫn, và tự mở rộng bằng chứng qua local retrieval, web search, arXiv, download PDF và re-index khi dữ liệu cục bộ chưa đủ.
+AI Research Assistant là một ứng dụng **Agentic RAG cho nghiên cứu học thuật**. Hệ thống cho phép người dùng upload paper PDF, index nội dung, đặt câu hỏi trong giao diện chat, nhận câu trả lời có citation, và quan sát toàn bộ quá trình agent lập kế hoạch, truy xuất, gọi tool, kiểm chứng câu trả lời.
 
-Repo này được viết như một project portfolio cho hướng LLM/RAG/Agentic Systems: hệ thống có agent state rõ ràng, decision points, tool routing, retry limit, stop reason, grounding verification, citation trace, benchmark baseline, cost/latency tracking, observability và security hardening.
+Điểm chính của project là chứng minh một RAG system có tính agentic thật, không chỉ là pipeline `retrieve -> prompt -> generate`. Agent có state, decision points, tool selection, retry/fallback policy, stopping condition, grounding verification và benchmark so sánh với các baseline RAG đơn giản hơn.
 
-## Vì Sao Đây Là Agentic RAG
+## Demo Use Case
 
-Đây không chỉ là một RAG pipeline cố định được bọc thêm LLM. Backend dùng LangGraph để điều khiển workflow có trạng thái và nhánh quyết định rõ ràng:
+Người dùng có thể:
+
+1. Upload hoặc index paper PDF.
+2. Hỏi câu hỏi về một hoặc nhiều paper.
+3. Xem câu trả lời kèm citation theo chunk/page.
+4. Theo dõi agent trace: query planning, retrieval, quality gate, tool call, verification.
+5. Khi local evidence chưa đủ, agent có thể mở rộng bằng web search, arXiv search, PDF download và PDF indexing.
+
+## Công Nghệ Sử Dụng
+
+| Nhóm | Công nghệ |
+| --- | --- |
+| Frontend | React 19, Vite 7, Lucide React |
+| Backend | Python 3.11+, FastAPI, Pydantic, Uvicorn |
+| Agent workflow | LangGraph |
+| LLM / Embedding | OpenAI API |
+| Vector database | ChromaDB |
+| Keyword search | Persistent BM25 index |
+| Reranking | Sentence Transformers cross-encoder, heuristic fallback |
+| PDF processing | PyMuPDF |
+| External tools | Tavily Web Search, arXiv |
+| Observability | JSON logs, request ID, W3C `traceparent`, optional OpenTelemetry |
+| Testing | Pytest, Ruff, ESLint, Vite build |
+| Deployment | Docker, Docker Compose |
+
+## Kỹ Thuật Chính
+
+### 1. Agentic Control Flow
+
+Backend dùng LangGraph để điều phối workflow:
 
 ```mermaid
 flowchart TD
@@ -21,7 +50,7 @@ flowchart TD
     I --> J["observe"]
     J -->|có evidence mới| F
     J -->|tiếp tục plan| I
-    J -->|không còn bước hữu ích| G
+    J -->|hết bước hữu ích| G
     G --> K["generate_answer"]
     K --> L["verify_answer"]
     L -->|grounded| M["finish"]
@@ -29,44 +58,109 @@ flowchart TD
     N --> I
 ```
 
-Bằng chứng agentic trong code:
+Các stopping condition được trace rõ ràng, ví dụ:
 
-- `planner_node.py` tạo `PlannerDecision` có cấu trúc và validate tool được chọn qua registry.
-- `query_planning_node.py` điều chỉnh retrieval mode, query decomposition, `top_k`, score threshold và chunk budget.
-- `quality_gate_node.py` quyết định context đã đủ trước khi sinh câu trả lời.
-- `tool_executor_node.py` chạy tool với timeout, latency trace, retry limit và cost trace.
-- `verify_answer_node.py` kiểm tra citation/claim và có thể kích hoạt recovery.
-- `graph.py` định nghĩa stopping condition như `answered_with_sufficient_context`, `answered_after_recovery`, `web_search_disabled`, `step_limit_reached`, `tool_limit_reached`, `verification_failed_answer_unknown`.
+- `answered_with_sufficient_context`
+- `answered_after_recovery`
+- `web_search_disabled`
+- `planner_no_valid_steps`
+- `step_limit_reached`
+- `tool_limit_reached`
+- `verification_failed_answer_unknown`
 
-Các tool của agent:
+### 2. Planning Và Tool Selection
 
-| Tool | Vai trò |
+Agent có planner tạo `PlannerDecision` có cấu trúc, chọn tool dựa trên intent, context quality và cấu hình request.
+
+Tool registry hiện có:
+
+| Tool | Chức năng |
 | --- | --- |
-| `local_retrieve` | Truy xuất từ PDF đã index bằng hybrid retrieval. |
-| `web_search` | Tìm kiếm web bằng Tavily khi local context thiếu. |
-| `web_snippet_ingest` | Lưu snippet web hữu ích vào index theo phạm vi chat. |
+| `local_retrieve` | Truy xuất từ local PDF index. |
+| `web_search` | Tìm kiếm web khi local context thiếu hoặc cần thông tin mới. |
+| `web_snippet_ingest` | Lưu snippet web vào index để tái sử dụng. |
 | `arxiv_search` | Tìm paper mới trên arXiv. |
-| `pdf_download` | Tải PDF được phát hiện một cách an toàn. |
-| `pdf_index` | Parse, chunk, embed và index PDF đã tải. |
+| `pdf_download` | Download PDF được phát hiện. |
+| `pdf_index` | Parse, chunk, embed và index PDF mới. |
 
-## Tính Năng Chính
+Planner có heuristic fallback và optional LLM planner qua `ENABLE_LLM_PLANNER=true`.
 
-- Upload, preview, index và quản lý PDF cục bộ.
-- Chunking theo section của paper học thuật.
-- ChromaDB vector search kết hợp persistent BM25 keyword index.
-- Hybrid retrieval, query rewriting, query decomposition và optional cross-encoder reranking.
-- Agent trace UI hiển thị planning, retrieval, tool calls, observation, verification và stop reason.
-- Claim-level citation map: mỗi claim được nối với các chunk citation hỗ trợ.
-- Semantic verification bằng heuristic claim judge và optional LLM claim judge.
-- Local retry với threshold thấp hơn trước khi fallback sang web.
-- Web/arXiv/PDF recovery path cho câu hỏi thiếu evidence hoặc cần thông tin mới.
-- Agent run history lưu latency, token usage, embedding usage, estimated cost, citations, findings và trace.
-- Request correlation qua `X-Request-ID`, W3C `traceparent`, `X-Trace-ID`, `X-Span-ID`.
-- Optional API key auth, tenant enforcement, tenant-scoped local storage và rate-limit headers.
-- SSRF protection, PDF size/header validation, prompt-injection marking và untrusted-context prompting.
-- Evaluation harness với baseline `vector_only`, `hybrid`, `hybrid_rerank` và `full_agentic`.
+### 3. Retrieval Pipeline
 
-## Kiến Trúc
+Retrieval không chỉ dùng vector search đơn giản:
+
+- Query rewriting và query decomposition.
+- Retrieval planning theo query type: simple lookup, comparison, multi-aspect, paper review.
+- ChromaDB vector search.
+- Persistent BM25 keyword index.
+- Hybrid scoring giữa vector và keyword.
+- Cross-encoder reranking với heuristic fallback.
+- Chunk budget và threshold được điều chỉnh theo loại câu hỏi.
+
+### 4. Chunking Và Indexing
+
+PDF được parse bằng PyMuPDF, sau đó chunk theo trang và section. Chunk metadata có thể lưu thông tin như:
+
+- `paper_id`
+- `title`
+- `page_number`
+- `chunk_id`
+- `section`
+- `section_type`
+- `source_type`
+- `trust_level`
+
+Thiết kế này giúp retrieval và citation trace rõ ràng hơn khi review kết quả.
+
+### 5. Grounding, Citation Và Verification
+
+Answer generation bắt buộc dùng citation theo `chunk_id`. Sau khi sinh câu trả lời, verifier kiểm tra:
+
+- Citation có tồn tại trong retrieved context không.
+- Claim có được citation support không.
+- Claim có dấu hiệu contradicted hoặc insufficient không.
+- Câu trả lời có cần revise, retrieve more hoặc trả `I don't know` không.
+
+Frontend có claim-level citation map, giúp xem claim nào được support bởi chunk nào.
+
+### 6. Retry, Fallback Và Recovery
+
+Khi local retrieval không đủ context:
+
+1. Agent retry local retrieval với `top_k` cao hơn và threshold thấp hơn.
+2. Nếu vẫn thiếu và web được bật, agent gọi `web_search`.
+3. Với câu hỏi cần thông tin mới, agent có thể dùng `arxiv_search`, `pdf_download`, `pdf_index`, rồi retrieve lại.
+4. Nếu verifier phát hiện unsupported claim, agent có thể lập recovery plan.
+
+Các vòng lặp đều có limit để tránh chạy vô hạn.
+
+### 7. Security Và Observability
+
+Security đã triển khai:
+
+- SSRF protection cho PDF download.
+- PDF upload/download size limit.
+- PDF header/content-type validation.
+- Optional domain allowlist cho PDF download.
+- Prompt-injection detection trong retrieved context.
+- Prompt boundary: retrieved context được coi là untrusted data.
+- Optional API key auth.
+- Optional tenant enforcement bằng `X-Tenant-ID`.
+- Tenant-scoped local chat/run storage.
+- Tenant-aware in-memory rate limiting.
+- Secret-file loading qua `*_FILE` env vars.
+
+Observability:
+
+- `X-Request-ID`
+- W3C `traceparent`
+- `X-Trace-ID`, `X-Span-ID`
+- JSON request logs
+- Structured stream error events
+- Agent trace với latency, token usage, embedding usage và estimated cost
+- Optional OpenTelemetry FastAPI instrumentation
+
+## Kiến Trúc Tổng Quan
 
 ```mermaid
 flowchart LR
@@ -89,16 +183,25 @@ flowchart LR
     PDF --> BM25
 ```
 
-## Evaluation
+## Benchmark
 
-Repo có evaluation harness trong `backend/evals/` để so sánh full agentic workflow với các baseline RAG đơn giản hơn.
+Project có evaluation harness trong `backend/evals/` để so sánh 4 chế độ:
 
-Artifact benchmark live hiện có:
+| Mode | Mô tả |
+| --- | --- |
+| `vector_only_rag` | Chỉ dùng vector search, không BM25, không rerank, không agent. |
+| `hybrid_rag` | Vector + BM25, không reranker, không agent. |
+| `hybrid_rerank_rag` | Hybrid retrieval + reranking, không agent recovery. |
+| `full_agentic_rag` | Toàn bộ LangGraph Agentic RAG workflow. |
+
+### Kết Quả Live Benchmark
+
+Artifact:
 
 - `backend/evals/results/live_results.json`
 - `backend/evals/results/live_report.md`
 
-Tóm tắt 110 cases:
+Dataset gồm 110 cases, bao gồm factual, comparison, multi-hop, follow-up, unanswerable, fresh-context và adversarial/citation-trap scenarios.
 
 | Mode | Cases | Answer recall | Citation precision | Retrieval recall | Errors |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -107,83 +210,42 @@ Tóm tắt 110 cases:
 | `hybrid_rerank_rag` | 110 | 0.864 | 0.864 | 0.909 | 0 |
 | `full_agentic_rag` | 110 | 0.982 | 0.991 | 0.991 | 0 |
 
-Kết quả cho thấy full agentic mode cải thiện answer recall, citation precision, retrieval recall và abstention behavior so với các baseline không agentic, đổi lại latency/cost cao hơn.
+So với `hybrid_rerank_rag`, full agentic mode cải thiện:
 
-Chạy deterministic eval không cần external API:
+- Answer recall: `+0.118`
+- Citation precision: `+0.127`
+- Citation recall: `+0.082`
+- Retrieval recall: `+0.082`
+- Abstention accuracy: `+0.082`
+
+Trade-off: full agentic mode có latency và estimated cost cao hơn do thêm planning, tool recovery và verification.
+
+### Chạy Benchmark
+
+Deterministic offline benchmark, không cần external API:
 
 ```bash
 cd backend
 python evals/run_eval.py --profile offline_fixture --mode all --output evals/results/offline_fixture_results.json --report-output evals/results/offline_fixture_report.md
 ```
 
-Chạy local fixture eval với temporary Chroma index:
+Local fixture benchmark với temporary Chroma index:
 
 ```bash
 cd backend
 python evals/run_eval.py --dataset tests/fixtures/eval_cases.jsonl --profile local_fixture --mode all --output evals/results/local_fixture_results.json --report-output evals/results/local_fixture_report.md
 ```
 
-Chạy live eval:
+Live benchmark:
 
 ```bash
 cd backend
 python evals/run_eval.py --profile live --mode all --output evals/results/live_results.json --report-output evals/results/live_report.md
 ```
 
-Live eval có preflight để kiểm tra `OPENAI_API_KEY`, Chroma corpus và yêu cầu external search cho fresh-context cases.
+Live benchmark có preflight kiểm tra `OPENAI_API_KEY`, Chroma corpus và fresh-context search requirements.
 
-## Tech Stack
-
-| Layer | Công nghệ |
-| --- | --- |
-| Frontend | React 19, Vite 7, Lucide React |
-| Backend | Python 3.11+, FastAPI, Pydantic, Uvicorn |
-| Agent | LangGraph |
-| LLM / Embedding | OpenAI API |
-| Vector DB | ChromaDB |
-| Keyword Search | Persistent BM25 index |
-| Reranking | Sentence Transformers cross-encoder, heuristic fallback |
-| PDF Processing | PyMuPDF |
-| External Research | Tavily, arXiv |
-| Observability | JSON logs, request ID, traceparent, optional OpenTelemetry |
-| Testing | Pytest, Ruff, ESLint, Vite build |
-
-## Cấu Trúc Dự Án
-
-```text
-AI Research Assistant/
-├── backend/
-│   ├── app/
-│   │   ├── agent/          # LangGraph nodes, state, tools, verifier, prompts
-│   │   ├── api/            # FastAPI routers, dependencies, auth/rate limit middleware
-│   │   ├── config/         # Settings và JSON logging
-│   │   ├── middleware/     # Request ID và trace context middleware
-│   │   ├── observability/  # traceparent và optional OpenTelemetry setup
-│   │   ├── parser/         # PDF parsing và chunking
-│   │   ├── services/       # LLM, embedding, RAG, retrieval, PDF, web, arXiv
-│   │   ├── storage/        # Chat history và agent run persistence
-│   │   └── vectorstore/    # Chroma và keyword index
-│   ├── docs/               # Architecture, workflow, evaluation, security, deployment
-│   ├── evals/              # Evaluation harness, dataset, reports
-│   └── tests/
-├── frontend/
-│   └── src/
-│       ├── components/
-│       ├── pages/
-│       └── utils/
-├── docker-compose.yml
-└── AGENTIC_RAG_IMPROVEMENT_PLAN.md
-```
-
-## Yêu Cầu
-
-- Python 3.11+
-- Node.js `^20.19.0` hoặc `>=22.12.0`
-- Docker và Docker Compose nếu chạy bằng container
-- OpenAI API key cho LLM và embeddings
-- Tavily API key nếu dùng web-search recovery
-
-## Chạy Local
+## Cài Đặt Và Chạy
 
 ### Backend
 
@@ -209,12 +271,12 @@ cp .env.example .env
 python -m app.main
 ```
 
-Điền ít nhất `OPENAI_API_KEY` trong `backend/.env`.
+Điền tối thiểu `OPENAI_API_KEY` trong `backend/.env`.
 
-Backend URLs:
+Backend:
 
 - API: `http://localhost:8000/api/v1`
-- Swagger UI: `http://localhost:8000/docs`
+- Swagger: `http://localhost:8000/docs`
 - Health: `http://localhost:8000/api/v1/health`
 
 ### Frontend
@@ -225,17 +287,13 @@ npm ci
 npm run dev
 ```
 
-Frontend chạy tại `http://localhost:5173`.
+Frontend chạy tại:
 
-Nếu muốn đổi backend URL:
-
-```env
-VITE_API_BASE_URL=http://localhost:8000/api/v1
+```text
+http://localhost:5173
 ```
 
-## Docker
-
-Từ thư mục gốc:
+### Docker
 
 ```bash
 cp backend/.env.example backend/.env
@@ -255,84 +313,7 @@ Services:
 | --- | --- |
 | Frontend | `http://localhost:5173` |
 | Backend API | `http://localhost:8000/api/v1` |
-| Swagger UI | `http://localhost:8000/docs` |
-
-Root compose chỉ mount runtime data vào backend container:
-
-```text
-backend/data:/app/data
-```
-
-Source backend không bị bind-mount đè lên `/app`, nên container chạy đúng image artifact đã build.
-
-## Biến Môi Trường
-
-Backend đọc `backend/.env`.
-
-| Variable | Default | Ý nghĩa |
-| --- | --- | --- |
-| `OPENAI_API_KEY` | empty | OpenAI key cho LLM và embeddings |
-| `OPENAI_API_KEY_FILE` | empty | File path cho mounted OpenAI secret |
-| `TAVILY_API_KEY` | empty | Tavily key cho web search |
-| `TAVILY_API_KEY_FILE` | empty | File path cho mounted Tavily secret |
-| `API_KEY` | empty | Optional backend API key |
-| `API_KEY_FILE` | empty | File path cho mounted backend API key |
-| `REQUIRE_TENANT_ID` | `false` | Yêu cầu `X-Tenant-ID` hợp lệ cho protected endpoints |
-| `API_RATE_LIMIT_PER_MINUTE` | `0` | In-memory request limit; `0` là tắt |
-| `LOG_LEVEL` | `INFO` | Backend log level |
-| `CORS_ALLOW_ORIGINS` | localhost origins | CORS allowlist, phân tách bằng dấu phẩy |
-| `DATA_DIR` | `data` | Thư mục runtime data |
-| `CHROMA_DIR` | `data/chroma` | Thư mục ChromaDB |
-| `MAX_PDF_DOWNLOAD_BYTES` | `52428800` | Giới hạn kích thước PDF tải từ URL |
-| `MAX_PDF_UPLOAD_BYTES` | `26214400` | Giới hạn kích thước PDF upload |
-| `PDF_DOWNLOAD_ALLOWED_DOMAINS` | empty | Optional allowlist domain cho PDF download |
-| `ENABLE_LLM_PLANNER` | `false` | Bật LLM JSON planner, có heuristic fallback |
-| `ENABLE_LLM_VERIFIER` | `false` | Bật LLM claim judge, có heuristic fallback |
-| `OTEL_ENABLED` | `false` | Bật FastAPI OpenTelemetry instrumentation |
-| `OTEL_SERVICE_NAME` | `ai-research-assistant-backend` | OpenTelemetry service name |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | OTLP HTTP trace endpoint |
-| `OPENAI_CHAT_MODEL` | `gpt-4.1-mini` | Chat/completion model |
-| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model |
-| `CROSS_ENCODER_RERANKER_ENABLED` | `true` | Bật cross-encoder reranking |
-| `CROSS_ENCODER_FALLBACK_TO_HEURISTIC` | `true` | Dùng heuristic fallback nếu reranker lỗi |
-
-Các biến cost estimate optional, mặc định `0.0`:
-
-- `OPENAI_CHAT_INPUT_COST_PER_1M`
-- `OPENAI_CHAT_OUTPUT_COST_PER_1M`
-- `OPENAI_EMBEDDING_COST_PER_1M`
-- `WEB_SEARCH_COST_USD`
-- `ARXIV_SEARCH_COST_USD`
-- `PDF_DOWNLOAD_COST_USD`
-- `PDF_INDEX_COST_USD`
-- `WEB_SNIPPET_INGEST_COST_USD`
-- `LOCAL_RETRIEVE_COST_USD`
-
-Giá trị env trực tiếp được ưu tiên hơn `*_FILE` secret values.
-
-## API Chính
-
-Base path: `/api/v1`
-
-| Method | Endpoint | Chức năng |
-| --- | --- | --- |
-| `GET` | `/health` | Health check |
-| `GET` | `/papers/pdfs` | Liệt kê PDF cục bộ |
-| `POST` | `/papers/pdfs/upload` | Upload PDF |
-| `GET` | `/papers/pdfs/{filename}/content` | Trả nội dung PDF |
-| `POST` | `/papers/pdfs/index` | Index PDF đã upload/download |
-| `POST` | `/papers/download` | Download PDF từ URL |
-| `POST` | `/chat` | Chat non-streaming |
-| `POST` | `/chat/stream` | Chat streaming dạng NDJSON |
-| `GET` | `/chat/history` | Liệt kê chat threads |
-| `POST` | `/chat/sessions` | Tạo chat session |
-| `GET/PATCH/DELETE` | `/chat/sessions/{chat_id}` | Đọc, đổi tên hoặc xóa session |
-| `POST` | `/chat/sessions/{chat_id}/sources` | Thêm source vào chat |
-| `DELETE` | `/chat/sessions/{chat_id}/sources/{paper_id}` | Xóa source khỏi chat |
-| `GET` | `/chat/sessions/{chat_id}/runs` | Liệt kê agent runs |
-| `GET` | `/chat/sessions/{chat_id}/findings` | Liệt kê research findings |
-
-Schema request/response đầy đủ có trong Swagger UI sau khi backend chạy.
+| Swagger | `http://localhost:8000/docs` |
 
 ## Kiểm Thử
 
@@ -366,35 +347,30 @@ Trạng thái verification hiện tại:
 - `npm run build`: passed
 - `docker compose config --quiet`: passed
 
-## Security Và Deployment Notes
+## Cấu Trúc Thư Mục
 
-Đã triển khai:
+```text
+AI Research Assistant/
+├── backend/
+│   ├── app/
+│   │   ├── agent/
+│   │   ├── api/
+│   │   ├── config/
+│   │   ├── middleware/
+│   │   ├── observability/
+│   │   ├── parser/
+│   │   ├── services/
+│   │   ├── storage/
+│   │   └── vectorstore/
+│   ├── docs/
+│   ├── evals/
+│   └── tests/
+├── frontend/
+├── docker-compose.yml
+└── AGENTIC_RAG_IMPROVEMENT_PLAN.md
+```
 
-- SSRF protection cho PDF download.
-- Optional PDF domain allowlist.
-- PDF download/upload size limits.
-- PDF content-type và `%PDF` header checks.
-- Prompt-injection phrase detection và suspicious-context trace marking.
-- Prompt boundary: retrieved context được xem là untrusted data.
-- Optional API key auth.
-- Optional tenant enforcement bằng `X-Tenant-ID`.
-- Tenant-scoped local chat/run storage.
-- Tenant-aware in-memory rate limiting.
-- Secret-file loading qua `OPENAI_API_KEY_FILE`, `TAVILY_API_KEY_FILE`, `API_KEY_FILE`.
-- JSON request logs có request/trace/span IDs.
-- Optional OpenTelemetry FastAPI spans.
-
-Production gaps cần giải thích thẳng trong phỏng vấn:
-
-- API key + `X-Tenant-ID` chưa phải OAuth/RBAC đầy đủ.
-- In-memory rate limiting nên chuyển sang Redis hoặc API gateway khi multi-instance.
-- Local JSON storage phù hợp demo/portfolio, nhưng production nên dùng database.
-- OpenTelemetry collector/dashboard nằm ngoài repo.
-- Chưa bundled antivirus hoặc sandboxed PDF parsing.
-
-## Documentation
-
-Tài liệu hữu ích:
+## Tài Liệu Bổ Sung
 
 - `AGENTIC_RAG_IMPROVEMENT_PLAN.md`
 - `backend/docs/agentic_design.md`
@@ -403,19 +379,3 @@ Tài liệu hữu ích:
 - `backend/docs/evaluation.md`
 - `backend/docs/security.md`
 - `backend/docs/deployment.md`
-
-## Local Data
-
-Runtime data mặc định:
-
-```text
-backend/data/
-├── pdfs/
-├── chroma/
-├── chat_history/
-├── agent_runs/
-├── metadata/
-└── tenants/
-```
-
-Không commit API keys, private PDFs, chat logs hoặc runtime Chroma data khi publish repository.
