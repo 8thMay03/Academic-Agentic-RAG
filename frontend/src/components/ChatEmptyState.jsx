@@ -8,7 +8,7 @@ export default function ChatEmptyState({ onCreateChat }) {
       </div>
       <h2>Bạn cần hỗ trợ gì hôm nay?</h2>
       <p>
-        Tạo cuộc trò chuyện mới rồi hỏi AI. Agent sẽ tìm trong toàn bộ tài liệu local và dùng web khi thiếu context.
+        Tạo cuộc trò chuyện mới rồi hỏi AI.
       </p>
       <button className="btn-primary" onClick={onCreateChat} type="button">
         <Plus size={16} aria-hidden="true" />
